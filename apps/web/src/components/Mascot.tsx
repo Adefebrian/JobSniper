@@ -11,8 +11,7 @@ const PALETTE = {
   dark: { body: "#40b4cc", belly: "#cdeef5", eye: "#ffffff", pupil: "#1d1d1f", beak: "#ff9f0a" },
 };
 
-const isDark = () => document.documentElement.dataset.shell === "mac"
-  && typeof window.matchMedia === "function" && window.matchMedia("(prefers-color-scheme: dark)").matches;
+const isDark = () => document.documentElement.dataset.theme === "dark";
 
 /** Draws Pip on a 64x64 grid. lid: 0 open, 1 closed. */
 function draw(context: CanvasRenderingContext2D, scale: number, pupil: { x: number; y: number }, lid: number) {
@@ -121,9 +120,10 @@ export function Mascot({ size = 72, follow = false, blink = true, sleepy = false
       cleanups.push(() => { cancelAnimationFrame(frame); window.removeEventListener("pointermove", onMove); });
     }
 
-    const media = typeof window.matchMedia === "function" ? window.matchMedia("(prefers-color-scheme: dark)") : null;
-    media?.addEventListener("change", render);
-    cleanups.push(() => media?.removeEventListener("change", render));
+    // Repaint when the app flips appearance (main.tsx sets data-theme).
+    const observer = typeof MutationObserver === "function" ? new MutationObserver(render) : null;
+    observer?.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+    cleanups.push(() => observer?.disconnect());
     return () => cleanups.forEach((cleanup) => cleanup());
   }, [size, follow, blink, sleepy]);
 

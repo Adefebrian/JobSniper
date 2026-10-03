@@ -139,6 +139,8 @@ export const sampleData: DashboardData = {
   ],
   settings: {
     name: "Ade Febrian",
+    nickname: "Brian",
+    weeklyGoal: 10,
     email: "ade.febrian@example.com",
     location: "Indonesia (GMT+7)",
     summary: "AI software engineer building reliable product-facing LLM systems, fullstack applications, and evaluation workflows.",
@@ -190,4 +192,13 @@ export const sampleStats: Stats = {
   modes: [{ label: "onsite", n: 80 }, { label: "remote_global", n: 22 }, { label: "remote_apac", n: 9 }, { label: "unknown", n: 29 }],
   companies: [{ label: "Wayve", n: 9 }, { label: "OpenAI", n: 7 }, { label: "Anthropic", n: 5 }],
   funnel: [{ label: "Discovered", n: 1240 }, { label: "Targets", n: 605 }, { label: "Drafted", n: 5 }, { label: "Applied", n: 3 }, { label: "Replied", n: 1 }],
+  skills: [
+    { label: "Python", n: 61, inCv: true }, { label: "AI agents", n: 48, inCv: false }, { label: "LLMs", n: 40, inCv: true },
+    { label: "Kubernetes", n: 22, inCv: false }, { label: "TypeScript", n: 21, inCv: true }, { label: "AWS", n: 18, inCv: false },
+  ],
+  share: { total: 140, remote_open: 31, sponsor_yes: 40, mid: 70, agentic: 36 },
+  best: [
+    { id: "job-northstar", title: "AI Software Engineer", company: "Northstar Labs", location: "Singapore / Remote APAC", score: 94, remote_scope: "apac", seniority: "mid", posted_at: hoursAgo(20) },
+  ],
+  me: { nickname: "Brian", weeklyGoal: 10, appliedThisWeek: 3 },
 };

@@ -33,6 +33,16 @@ export const formatAge = (iso: string | null | undefined, now = new Date()) => {
   return `${Math.floor(hours / 24)}d`;
 };
 
+/** "Just now", "7m ago", or "Never": one phrase for a past moment. */
+export const agoPhrase = (iso: string | null | undefined, now = new Date()) => {
+  const age = formatAge(iso, now);
+  if (age === "never") return "Never";
+  return age === "0m" ? "Just now" : `${age} ago`;
+};
+
+/** Variant names arrive as "Ai Engineer"; show AI in capitals. */
+export const tidyName = (value: string) => value.replace(/\bAi\b/g, "AI");
+
 /** "7m ago", or "never" when the timestamp is empty or invalid. */
 export const formatAgo = (iso: string | null | undefined, now = new Date()) => {
   const age = formatAge(iso, now);
@@ -52,13 +62,6 @@ export const modeLabel = (job: Pick<JobTarget, "workMode" | "remoteScope">) => {
   if (job.remoteScope === "apac") return "Remote APAC";
   if (job.remoteScope === "restricted") return "Remote restricted";
   return "Remote, scope unknown";
-};
-
-/** Long multi-country locations collapse to the first two plus a count. */
-export const shortLocation = (location: string) => {
-  const parts = location.split(",").map((part) => part.trim()).filter(Boolean);
-  if (parts.length <= 3) return location;
-  return `${parts.slice(0, 2).join(", ")} +${parts.length - 2} more`;
 };
 
 export const sponsorshipLabel = (value: JobTarget["sponsorship"]) => {
@@ -269,3 +272,100 @@ export const isNew = (iso: string | null | undefined, now = new Date()) => {
 };
 
 export const scoreBand = (score: number) => score >= 70 ? "good" : score >= 40 ? "mid" : "low";
+
+/* ---------- Places ---------- */
+
+/** Country codes and names as they show on a row: UK, US, UAE stay short, the rest are names. */
+const COUNTRY_SHORT: Record<string, string> = {
+  UK: "UK", GB: "UK", US: "US", AE: "UAE", SG: "Singapore", AU: "Australia", NZ: "New Zealand", CA: "Canada",
+  DE: "Germany", FR: "France", NL: "Netherlands", CH: "Switzerland", IE: "Ireland", ES: "Spain", IT: "Italy",
+  SE: "Sweden", DK: "Denmark", NO: "Norway", FI: "Finland", PL: "Poland", PT: "Portugal", AT: "Austria", BE: "Belgium",
+  JP: "Japan", KR: "South Korea", IN: "India", ID: "Indonesia", MY: "Malaysia", HK: "Hong Kong", QA: "Qatar", SA: "Saudi Arabia",
+  IL: "Israel", BR: "Brazil", MX: "Mexico", CZ: "Czechia", EE: "Estonia", IS: "Iceland", LT: "Lithuania",
+};
+
+const COUNTRY_WORDS: Record<string, string> = {
+  "united kingdom": "UK", uk: "UK", "great britain": "UK", england: "UK", scotland: "UK",
+  "united states": "US", "united states of america": "US", usa: "US", us: "US", america: "US",
+  "united arab emirates": "UAE", uae: "UAE",
+  ...Object.fromEntries(Object.entries(COUNTRY_SHORT).filter(([code]) => !["UK", "GB", "US", "AE"].includes(code)).map(([, name]) => [name.toLowerCase(), name])),
+  ...Object.fromEntries(Object.entries(COUNTRY_SHORT).filter(([code]) => !["UK", "GB", "US", "AE"].includes(code)).map(([code, name]) => [code.toLowerCase(), name])),
+  deutschland: "Germany", "the netherlands": "Netherlands", "northern america": "", canada: "Canada",
+};
+
+const US_STATES = new Set([
+  ..."al ak az ar ca co ct de fl ga hi id il in ia ks ky la me md ma mi mn ms mo mt ne nv nh nj nm ny nc nd oh ok or pa ri sc sd tn tx ut vt va wa wv wi wy dc".split(" "),
+  "california", "washington", "texas", "massachusetts", "colorado", "illinois", "georgia", "oregon", "virginia", "florida", "new york", "new jersey", "north carolina", "pennsylvania",
+]);
+
+const REGIONS = new Set(["europe", "emea", "apac", "latam", "americas", "north america", "northern america", "asia", "global", "worldwide", "anywhere", "eu"]);
+const NOISE = /\b(remote(ly)?|hybrid|on-?site|office|hq|headquarters|in the|in|or|and)\b/gi;
+
+export const countryShort = (code: string | null | undefined) => {
+  if (!code) return "";
+  const upper = code.toUpperCase();
+  return COUNTRY_SHORT[upper] ?? (code.length === 2 ? upper : code);
+};
+
+/**
+ * A messy listing location as one short phrase: "London, UK", "San Francisco, US +2",
+ * "Singapore", "11 countries". Never cut mid-word; the full text stays on the detail.
+ */
+export const placeLabel = (location: string | null | undefined, countryCode?: string | null) => {
+  const raw = (location ?? "").replace(/\([^)]*\)/g, " ").trim();
+  const fallback = countryCode && !["Other", "Remote", "unknown"].includes(countryCode) ? countryShort(countryCode) : "";
+  if (!raw) return fallback || "Location not stated";
+  const usFirst = countryShort(countryCode) === "US";
+  const parse = (segment: string) => {
+    const tokens = segment.split(/\s*(?:,|:|\s-\s|\band\b)\s*/i).map((part) => part.replace(NOISE, " ").replace(/\s+/g, " ").trim()).filter(Boolean);
+    let city = "";
+    let country = "";
+    const countries = new Set<string>();
+    const regions = new Set<string>();
+    for (const token of tokens) {
+      let key = token.toLowerCase();
+      if (/\s(usa|us)$/.test(key) && !city) { city = token.replace(/\s+(usa|us)$/i, ""); country ||= "US"; continue; }
+      const isState = Boolean(city) && US_STATES.has(key);
+      if (isState && (usFirst || key.length > 2 || !(key in COUNTRY_WORDS))) { country ||= "US"; continue; }
+      if (key in COUNTRY_WORDS) { const name = COUNTRY_WORDS[key] ?? ""; if (name) { countries.add(name); country ||= name; } else regions.add(token); continue; }
+      if (REGIONS.has(key)) { regions.add(token); continue; }
+      if (/\d/.test(key)) continue;
+      key = token;
+      if (!city) city = key;
+    }
+    return { city, country, countries, regions };
+  };
+  const segments = raw.split(/\s*(?:\||;|\/|\bor\b)\s*/i).map((part) => part.trim()).filter(Boolean);
+  const first = parse(segments[0] ?? "");
+  const extra = segments.slice(1).filter((segment) => parse(segment).city).length;
+  const plus = extra > 0 ? ` +${extra}` : "";
+  const country = first.country || fallback;
+  if (!first.city && first.countries.size >= 3) return `${first.countries.size} countries`;
+  if (!first.city && !first.country && first.regions.size >= 2) return `${first.regions.size} regions`;
+  if (first.city && country && first.city.toLowerCase() !== country.toLowerCase()) return `${first.city}, ${country}${plus}`;
+  if (first.city) return `${first.city}${plus}`;
+  if (first.countries.size === 2) return [...first.countries].join(" and ");
+  if (country) return `${country}${plus}`;
+  return `${[...first.regions][0] ?? raw.split(",")[0]}${plus}`;
+};
+
+export const modeShort = (job: Pick<JobTarget, "workMode">) => job.workMode === "remote" ? "Remote" : job.workMode === "hybrid" ? "Hybrid" : "On-site";
+
+/** Today, This week, Older: the quiet groups on the target list. */
+export const ageGroup = (iso: string | null | undefined, now = new Date()) => {
+  const date = parseDate(iso);
+  if (!date) return "Older";
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  if (date.getTime() >= startOfToday) return "Today";
+  if (now.getTime() - date.getTime() < 7 * 86_400_000) return "This week";
+  return "Older";
+};
+
+/** Share of a total as a whole percent, 0 when the total is empty. */
+export const percentOf = (n: number, total: number) => total > 0 ? Math.round((n / total) * 100) : 0;
+
+/** Bare host of a URL for quick facts ("jobs.ashbyhq.com"). */
+export const hostOf = (url: string | null | undefined) => {
+  if (!url) return "";
+  try { return new URL(url).hostname.replace(/^www\./, ""); } catch { return ""; }
+};

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import * as api from "./api.ts";
 import { AppShell } from "./components/AppShell.tsx";
-import { LoadingState, Notice } from "./components/States.tsx";
+import { LoadingRows, Notice } from "./components/ui/index.ts";
 import { CompaniesSourcesScreen } from "./screens/CompaniesSourcesScreen.tsx";
 import { OutreachScreen } from "./screens/OutreachScreen.tsx";
 import { SettingsScreen } from "./screens/SettingsScreen.tsx";
@@ -15,7 +15,7 @@ type AppRoute = "overview" | "targets" | "outreach" | "companies" | "settings";
 
 const EMPTY: DashboardData = {
   targets: [], outreach: [], companies: [], sources: [],
-  settings: { name: "", email: "", location: "", summary: "", skills: [], availability: "", cvVariants: [], countries: [],
+  settings: { name: "", nickname: "Brian", weeklyGoal: 10, email: "", location: "", summary: "", skills: [], availability: "", cvVariants: [], countries: [],
     scoreWeights: { roleFit: 1, seniority: 1, modeVisa: 1, freshness: 1, skillOverlapCv: 1 }, sender: "", dailyCap: 20, llmBudgetUsd: 30 },
   status: { lastRunT1: "", lastRunT2: "", lastRunT3: "", queueDepth: 0, llmSpendUsd: 0, blockedSources: 0 },
 };
@@ -146,21 +146,20 @@ export function App() {
 
   const { route, id } = location;
   let screen;
-  if (route === "overview") screen = <OverviewScreen name={data.settings.name} />;
-  else if (!loaded) screen = <LoadingState />;
+  if (route === "overview") screen = <OverviewScreen nickname={data.settings.nickname || "Brian"} />;
+  else if (!loaded) screen = <div className="pane"><LoadingRows label="Loading workspace data" /></div>;
   else if (route === "targets") screen = <TargetsScreen targets={data.targets} selectedId={id} onAction={onJobAction} onFeedback={onFeedback} onTargetUpdate={mergeTarget} onExport={(format) => onExport("targets", format)} />;
-  else if (route === "outreach") screen = <OutreachScreen outreach={data.outreach} dailyCap={data.settings.dailyCap} onAction={onOutreachAction} onExport={(format) => onExport("outreach", format)} />;
-  else if (route === "companies") screen = <CompaniesSourcesScreen companies={data.companies} sources={data.sources} onCompanyAction={onCompanyAction} onSourceAction={onSourceAction} onAddCompany={onAddCompany} onAddSource={onAddSource} />;
-  else screen = <SettingsScreen settings={data.settings} onSave={onSaveSettings} onReloadSettings={onReloadSettings} />;
+  else if (route === "outreach") screen = <OutreachScreen settings={data.settings} outreach={data.outreach} dailyCap={data.settings.dailyCap} onAction={onOutreachAction} onExport={(format) => onExport("outreach", format)} />;
+  else if (route === "companies") screen = <CompaniesSourcesScreen status={data.status} companies={data.companies} sources={data.sources} onCompanyAction={onCompanyAction} onSourceAction={onSourceAction} onAddCompany={onAddCompany} onAddSource={onAddSource} />;
+  else screen = <SettingsScreen status={data.status} settings={data.settings} onSave={onSaveSettings} onReloadSettings={onReloadSettings} />;
 
   return (
     <AppShell route={route} status={data.status} counts={{
       targets: filterTargets(data.targets, {}).length,
       outreach: data.outreach.filter((item) => item.status === "draft" || item.status === "followup_due").length,
-      companies: data.companies.length,
     }}>
-      <div className={route === "targets" ? "page page-split" : "page"}>
-        {error ? <Notice tone="warning" title="API problem">{error}</Notice> : null}
+      <div className={`page page-${route}`}>
+        {error ? <div className="page-notice"><Notice tone="warning" title="The local API did not answer" onClose={() => setError(null)}>{error}</Notice></div> : null}
         {screen}
       </div>
     </AppShell>

@@ -14,6 +14,7 @@ Object.assign(globalThis, {
   Node: window.Node,
   Event: window.Event,
   CustomEvent: window.CustomEvent,
+  MutationObserver: window.MutationObserver,
   navigator: window.navigator,
   getComputedStyle: window.getComputedStyle.bind(window),
   IS_REACT_ACT_ENVIRONMENT: true,
@@ -25,33 +26,48 @@ afterEach(() => {
   window.document.body.innerHTML = "";
 });
 
+const render = async (stats: typeof sampleStats, nickname = "Brian") => {
+  const host = window.document.createElement("div");
+  window.document.body.appendChild(host);
+  const root = createRoot(host as unknown as Element);
+  await act(async () => { root.render(<OverviewScreen nickname={nickname} initialStats={stats} />); });
+  return { host, unmount: () => act(async () => { root.unmount(); }) };
+};
+
 describe("Overview", () => {
-  test("renders the greeting, tiles, and every block from sample stats", async () => {
-    const host = window.document.createElement("div");
-    window.document.body.appendChild(host);
-    const root = createRoot(host as unknown as Element);
-    await act(async () => { root.render(<OverviewScreen name="Ade Febrian" initialStats={sampleStats} />); });
+  test("greets Brian by nickname and shows his goal, matches, skills, and market", async () => {
+    const { host, unmount } = await render(sampleStats);
     const text = host.textContent ?? "";
-    expect(text).toMatch(/(Good morning|Good afternoon|Good evening|Working late), Ade/);
-    expect(text).toContain("1 reply in, and 3 sent this week. Keep going.");
-    for (const label of ["Fresh targets", "Targets open", "Applied", "Replies"]) expect(text).toContain(label);
-    for (const title of ["What landed this week?", "Which roles?", "Where?", "What level?", "Remote or on-site?", "How far did they get?", "Most active companies this week"]) expect(text).toContain(title);
-    expect(text).toContain("your focus");
+    expect(text).toMatch(/(Good morning|Good afternoon|Good evening|Working late), Brian/);
+    expect(text).not.toContain("Ade");
+    expect(text).toContain("7 to go this week");
+    expect(text).toContain("3 of 10 applications sent since Monday.");
+    for (const title of ["Weekly goal", "How open the market is to you", "Best matches today", "Skills the market wants this week", "Last 7 days", "Roles", "Countries", "Levels", "Pipeline", "Most active companies"]) expect(text).toContain(title);
+    expect(host.querySelectorAll(".best-card")).toHaveLength(1);
+    expect(host.querySelector(".best-card")?.getAttribute("href")).toBe("#/targets/job-northstar");
+    expect(text).toContain("3 of 6 in your CV");
+    expect(host.querySelectorAll(".ui-badge.is-warning")).toHaveLength(3);
+    expect(text).toContain("29%");
+    expect(text).toContain("Your level");
     expect(host.querySelectorAll(".week-day")).toHaveLength(7);
     expect(host.querySelectorAll(".funnel li")).toHaveLength(5);
     expect(host.querySelector(".mascot")).not.toBeNull();
-    await act(async () => { root.unmount(); });
+    await unmount();
   });
 
-  test("encourages when nothing has been applied yet", async () => {
-    const host = window.document.createElement("div");
-    window.document.body.appendChild(host);
-    const root = createRoot(host as unknown as Element);
-    const empty = { ...sampleStats, funnel: sampleStats.funnel.map((step) => ["Applied", "Replied"].includes(step.label) ? { ...step, n: 0 } : step) };
-    await act(async () => { root.render(<OverviewScreen name="" initialStats={empty} />); });
-    expect(host.textContent).toContain("No applications yet. Your first one is a click away");
-    expect(host.textContent).toMatch(/, there/);
-    await act(async () => { root.unmount(); });
+  test("nudges toward the first application and the CV import when there is nothing yet", async () => {
+    const empty = {
+      ...sampleStats,
+      funnel: sampleStats.funnel.map((step) => ["Applied", "Replied"].includes(step.label) ? { ...step, n: 0 } : step),
+      skills: sampleStats.skills.map((skill) => ({ ...skill, inCv: false })),
+      best: [],
+    };
+    const { host, unmount } = await render(empty);
+    const text = host.textContent ?? "";
+    expect(text).toContain("No applications yet. Open a target and press Draft email");
+    expect(text).toContain("Import your CV");
+    expect(text).toContain("No fresh matches yet");
+    await unmount();
   });
 
   test("labels stats in plain words", () => {

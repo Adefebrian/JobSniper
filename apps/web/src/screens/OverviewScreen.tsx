@@ -1,20 +1,19 @@
-import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
+import { useEffect, useState, type CSSProperties } from "react";
 import * as api from "../api.ts";
 import type { StatCount, Stats } from "../types.ts";
-import { countryName, greeting, levelName, modeName, motivation } from "../utils.ts";
-import { CountUp } from "../components/CountUp.tsx";
+import { countryName, formatAge, greeting, levelName, motivation, percentOf, placeLabel, scoreLabel, seniorityLabel } from "../utils.ts";
 import { Mascot } from "../components/Mascot.tsx";
-import { Monogram } from "../components/Monogram.tsx";
+import { Badge, Button, Card, EmptyState, GoalRing, LoadingRows, Meta, Meter, MeterRow, Monogram, ScoreRing, Section, Stat } from "../components/ui/index.ts";
 
 interface Props {
-  name: string;
+  nickname: string;
   /** Tests pass stats directly; the app fetches them. */
   initialStats?: Stats | null;
 }
 
 const WEEKDAY = new Intl.DateTimeFormat("en", { weekday: "short" });
 
-export function OverviewScreen({ name, initialStats = null }: Props) {
+export function OverviewScreen({ nickname, initialStats = null }: Props) {
   const [stats, setStats] = useState<Stats | null>(initialStats);
   const [error, setError] = useState<string | null>(null);
 
@@ -29,116 +28,153 @@ export function OverviewScreen({ name, initialStats = null }: Props) {
     return () => { live = false; window.clearInterval(timer); };
   }, [initialStats]);
 
-  const firstName = name.trim().split(/\s+/)[0] || "there";
+  const name = (stats?.me?.nickname || nickname || "Brian").trim();
 
-  if (!stats) {
-    return (
-      <div className="screen overview">
-        <header className="overview-hero" data-tauri-drag-region>
-          <Mascot size={72} follow label="Pip the scout" />
-          <div className="overview-hello">
-            <h1>{greeting()}, {firstName}</h1>
-            <p className="muted">{error ? "Your numbers are not available right now. They will appear after the next refresh." : "Gathering your numbers."}</p>
-          </div>
-        </header>
-      </div>
-    );
-  }
-
-  const t = stats.totals;
   return (
-    <div className="screen overview">
-      <header className="overview-hero" data-tauri-drag-region>
-        <Mascot size={72} follow label="Pip the scout" />
-        <div className="overview-hello">
-          <h1>{greeting()}, {firstName}</h1>
-          <p className="overview-line">{motivation(t)}</p>
+    <div className="pane overview">
+      <header className="overview-hello" data-tauri-drag-region>
+        <Mascot size={56} follow label="Pip the scout" />
+        <div className="overview-hello-text" data-tauri-drag-region>
+          <h1>{greeting()}, {name}</h1>
+          <p>{stats ? motivation(stats.totals) : error ? "Your numbers are not available right now. They will appear after the next refresh." : "Gathering this week's numbers."}</p>
         </div>
       </header>
+      {stats ? <Board stats={stats} /> : <LoadingRows rows={4} label="Loading your numbers" />}
+    </div>
+  );
+}
 
-      <section className="stat-tiles" aria-label="Key numbers">
-        <Tile label="Fresh targets" hint="posted in 72h" value={t.targets_fresh} href="#/targets" />
-        <Tile label="Targets open" hint="ready to review" value={t.targets_open} href="#/targets" />
-        <Tile label="Applied" hint={`${t.applied_week} this week`} value={t.applied} href="#/outreach" />
-        <Tile label="Replies" hint={t.positive ? `${t.positive} positive` : "so far"} value={t.replied} href="#/outreach" />
-      </section>
+function Board({ stats }: { stats: Stats }) {
+  const t = stats.totals;
+  const me = stats.me ?? { nickname: "Brian", weeklyGoal: 10, appliedThisWeek: t.applied_week };
+  const goal = me.weeklyGoal || 10;
+  const left = Math.max(0, goal - me.appliedThisWeek);
+  const share = stats.share ?? { total: 0, remote_open: 0, sponsor_yes: 0, mid: 0, agentic: 0 };
+  const best = stats.best ?? [];
+  const skills = stats.skills ?? [];
+  const inCv = skills.filter((skill) => skill.inCv).length;
+  const maxSkill = Math.max(...skills.map((skill) => skill.n), 1);
 
-      <div className="overview-grid">
-        <Block title="What landed this week?" wide>
+  const openness = [
+    { label: "Sponsor a visa", n: share.sponsor_yes },
+    { label: "Mid-level", n: share.mid },
+    { label: "Agentic work", n: share.agentic },
+    { label: "Remote, open to you", n: share.remote_open },
+  ];
+
+  return (
+    <div className="board">
+      <div className="board-row row-hero">
+        <Card className="goal-card" title="Weekly goal">
+          <div className="goal">
+            <GoalRing value={me.appliedThisWeek} goal={goal} />
+            <div className="goal-text">
+              <strong>{left === 0 ? "Goal reached this week" : `${left} to go this week`}</strong>
+              <p>{me.appliedThisWeek} of {goal} applications sent since Monday.</p>
+            </div>
+          </div>
+          <div className="card-foot">
+            <Button variant="primary" href="#/targets">Review targets</Button>
+            <Button variant="plain" href="#/settings">Change goal</Button>
+          </div>
+        </Card>
+        <Card className="open-card" title="How open the market is to you" action={<span className="card-meta tabular">{share.total.toLocaleString("en")} targets this week</span>}>
+          <ul className="open-grid">
+            {openness.map((item, index) => (
+              <li key={item.label}>
+                <Stat value={`${percentOf(item.n, share.total)}%`} label={item.label} delta={`${item.n.toLocaleString("en")} of ${share.total.toLocaleString("en")}`} size="lg" />
+                <Meter value={item.n} max={share.total} index={index} />
+              </li>
+            ))}
+          </ul>
+        </Card>
+      </div>
+
+      <Section title="Best matches today" action={<Button variant="plain" icon="chevronRight" href="#/targets">All targets</Button>}>
+        {best.length === 0 ? (
+          <Card label="Best matches"><EmptyState compact title="No fresh matches yet" description="Pip checks every source a few times a day. New roles land here first." /></Card>
+        ) : (
+          <ul className="best-grid">
+            {best.slice(0, 3).map((job) => (
+              <li key={job.id}>
+                <a className="ui-card best-card" href={`#/targets/${encodeURIComponent(job.id)}`}>
+                  <span className="best-top">
+                    <Monogram name={job.company} size={32} />
+                    <ScoreRing score={job.score} size={40} animate />
+                  </span>
+                  <span className="best-title">{job.title}</span>
+                  <span className="best-meta"><Meta parts={[job.company, placeLabel(job.location), seniorityLabel(job.seniority), `${formatAge(job.posted_at)} ago`]} /></span>
+                  <span className="best-foot">{scoreLabel(job.score)}</span>
+                </a>
+              </li>
+            ))}
+          </ul>
+        )}
+      </Section>
+
+      <div className="board-row row-skills">
+        <Card title="Skills the market wants this week" action={skills.length ? <span className="card-meta tabular">{inCv} of {skills.length} in your CV</span> : undefined}>
+          {skills.length === 0 ? <EmptyState compact title="No skill data yet" description="Skills appear once this week's targets are judged." /> : (
+            <>
+              {inCv === 0 ? (
+                <p className="card-note">Your CV is not matched yet, so every skill reads as a gap. <a className="text-link" href="#/settings">Import your CV</a></p>
+              ) : null}
+              <ul className="meter-list is-two">
+                {skills.slice(0, 12).map((skill, index) => (
+                  <MeterRow key={skill.label} index={index} label={skill.label} value={skill.n} max={maxSkill} tone={skill.inCv ? "positive" : "neutral"}
+                    aside={skill.inCv ? <Badge tone="positive">In CV</Badge> : <Badge tone="warning">Gap</Badge>} />
+                ))}
+              </ul>
+            </>
+          )}
+        </Card>
+        <Card className="trend-card" title="Last 7 days">
           <WeekChart daily={stats.daily} />
-        </Block>
-        <Block title="Which roles?">
-          <BarList items={stats.roles} empty="No targets this week yet." />
-        </Block>
-        <Block title="Where?">
-          <BarList items={stats.countries.map((item) => ({ ...item, label: countryName(item.label) }))} empty="No targets this week yet." />
-        </Block>
-        <Block title="What level?">
-          <BarList items={stats.levels.map((item) => ({ ...item, label: levelName(item.label), focus: item.label === "mid" }))} empty="No targets this week yet." />
-        </Block>
-        <Block title="Remote or on-site?">
-          <BarList items={stats.modes.map((item) => ({ ...item, label: modeName(item.label) }))} empty="No targets this week yet." />
-        </Block>
-        <Block title="How far did they get?" wide>
-          <Funnel steps={stats.funnel} />
-        </Block>
-        <Block title="Most active companies this week" wide>
-          {stats.companies.length === 0 ? <Encourage text="No company has posted twice yet. The scout keeps watching." /> : (
-            <ul className="company-list">
-              {stats.companies.map((company) => (
+        </Card>
+      </div>
+
+      <div className="board-row row-three">
+        <Card title="Roles"><Breakdown items={stats.roles} /></Card>
+        <Card title="Countries"><Breakdown items={stats.countries.map((item) => ({ ...item, label: countryName(item.label) }))} /></Card>
+        <Card title="Levels"><Breakdown items={stats.levels.map((item) => ({ ...item, label: levelName(item.label), focus: item.label === "mid" }))} /></Card>
+      </div>
+
+      <div className="board-row row-pipeline">
+        <Card title="Pipeline"><Funnel steps={stats.funnel} /></Card>
+        <Card title="Most active companies" flush={stats.companies.length > 0}>
+          {stats.companies.length === 0 ? <p className="card-note">No company has posted twice this week yet.</p> : (
+            <ul className="row-list">
+              {stats.companies.slice(0, 5).map((company) => (
                 <li key={company.label}>
-                  <Monogram name={company.label} size={28} />
-                  <span className="company-name">{company.label}</span>
-                  <span className="muted tabular">{company.n} {company.n === 1 ? "role" : "roles"}</span>
+                  <CompanyRow label={company.label} n={company.n} />
                 </li>
               ))}
             </ul>
           )}
-        </Block>
+        </Card>
       </div>
     </div>
   );
 }
 
-function Tile({ label, hint, value, href }: { label: string; hint: string; value: number; href: string }) {
+function CompanyRow({ label, n }: { label: string; n: number }) {
   return (
-    <a className="stat-tile" href={href}>
-      <span className="stat-label">{label}</span>
-      <span className="stat-value"><CountUp value={value} /></span>
-      <span className="stat-hint">{hint}</span>
-    </a>
-  );
-}
-
-function Block({ title, wide = false, children }: { title: string; wide?: boolean; children: ReactNode }) {
-  return (
-    <section className={`overview-block ${wide ? "is-wide" : ""}`}>
-      <h2>{title}</h2>
-      {children}
-    </section>
-  );
-}
-
-function Encourage({ text }: { text: string }) {
-  return (
-    <div className="encourage">
-      <Mascot size={36} blink={false} reactive={false} />
-      <p className="muted">{text}</p>
+    <div className="ui-row">
+      <span className="ui-row-leading"><Monogram name={label} size={24} /></span>
+      <span className="ui-row-text"><span className="ui-row-title">{label}</span></span>
+      <span className="ui-row-trailing tabular row-value">{n} {n === 1 ? "role" : "roles"}</span>
     </div>
   );
 }
 
-function BarList({ items, empty }: { items: (StatCount & { focus?: boolean })[]; empty: string }) {
-  if (items.length === 0) return <Encourage text={empty} />;
+function Breakdown({ items }: { items: (StatCount & { focus?: boolean })[] }) {
+  if (items.length === 0) return <p className="card-note">Nothing this week yet.</p>;
   const max = Math.max(...items.map((item) => item.n), 1);
   return (
-    <ul className="bar-list">
-      {items.slice(0, 6).map((item, index) => (
-        <li key={item.label} className={item.focus ? "is-focus" : undefined} style={{ "--i": index } as CSSProperties}>
-          <span className="bar-label">{item.label}{item.focus ? <span className="focus-note">your focus</span> : null}</span>
-          <span className="bar-value tabular">{item.n}</span>
-          <span className="bar-track" aria-hidden="true"><span className="bar-fill" style={{ transform: `scaleX(${item.n / max})` }} /></span>
-        </li>
+    <ul className="meter-list">
+      {items.slice(0, 5).map((item, index) => (
+        <MeterRow key={item.label} index={index} label={item.label} value={item.n} max={max} display={item.n.toLocaleString("en")}
+          tone={item.focus ? "accent" : "neutral"} aside={item.focus ? <Badge tone="accent">Your level</Badge> : undefined} />
       ))}
     </ul>
   );
@@ -146,29 +182,30 @@ function BarList({ items, empty }: { items: (StatCount & { focus?: boolean })[];
 
 function WeekChart({ daily }: { daily: Stats["daily"] }) {
   const max = Math.max(...daily.map((day) => day.discovered), 1);
-  const totalPosted = daily.reduce((sum, day) => sum + day.discovered, 0);
-  const totalTargeted = daily.reduce((sum, day) => sum + day.targeted, 0);
-  if (totalPosted === 0) return <Encourage text="Nothing posted in the last 7 days yet. New roles appear here as they land." />;
+  const posted = daily.reduce((sum, day) => sum + day.discovered, 0);
+  const targeted = daily.reduce((sum, day) => sum + day.targeted, 0);
+  if (posted === 0) return <EmptyState compact title="Quiet week so far" description="New roles show here as they land." />;
   return (
-    <div className="week-chart">
-      <p className="chart-legend">
-        <span><span className="key key-posted" aria-hidden="true" />Posted <strong className="tabular">{totalPosted}</strong></span>
-        <span><span className="key key-targeted" aria-hidden="true" />Targeted for you <strong className="tabular">{totalTargeted}</strong></span>
-      </p>
-      <div className="week-bars" role="img" aria-label={`Last 7 days: ${totalPosted} posted, ${totalTargeted} targeted.`}>
+    <div className="week">
+      <div className="week-stats">
+        <Stat value={posted} label="Posted" />
+        <Stat value={targeted} label="Targeted for you" />
+      </div>
+      <div className="week-bars" role="img" aria-label={`Last 7 days: ${posted} posted, ${targeted} targeted for you.`}>
         {daily.map((day, index) => {
           const date = new Date(`${day.day}T12:00:00`);
           return (
-            <div className="week-day" key={day.day} style={{ "--i": index } as CSSProperties} title={`${day.day}: ${day.discovered} posted, ${day.targeted} targeted`}>
+            <div className="week-day" key={day.day} style={{ "--i": index } as CSSProperties}>
               <div className="week-stack">
-                <span className="week-bar bar-posted" style={{ height: `${(day.discovered / max) * 100}%` }} />
-                <span className="week-bar bar-targeted" style={{ height: `${(day.targeted / max) * 100}%` }} />
+                <span className="week-bar is-posted" style={{ transform: `scaleY(${day.discovered / max})` }} />
+                <span className="week-bar is-targeted" style={{ transform: `scaleY(${day.targeted / max})` }} />
               </div>
-              <span className={`week-label ${index === daily.length - 1 ? "is-today" : ""}`}>{WEEKDAY.format(date)}</span>
+              <span className={`week-label ${index === daily.length - 1 ? "is-today" : ""}`}>{index === daily.length - 1 ? "Today" : WEEKDAY.format(date)}</span>
             </div>
           );
         })}
       </div>
+      <p className="week-key"><span className="key is-posted" aria-hidden="true" />Posted<span className="key is-targeted" aria-hidden="true" />Targeted for you</p>
     </div>
   );
 }
@@ -177,21 +214,16 @@ function Funnel({ steps }: { steps: StatCount[] }) {
   const max = Math.max(...steps.map((step) => step.n), 1);
   const applied = steps.find((step) => step.label === "Applied")?.n ?? 0;
   return (
-    <div className="funnel-wrap">
-      <ol className="funnel">
+    <>
+      <ol className="meter-list funnel">
         {steps.map((step, index) => {
           const previous = steps[index - 1]?.n ?? 0;
-          const rate = index > 0 && previous > 0 ? Math.round((step.n / previous) * 100) : null;
-          return (
-            <li key={step.label} style={{ "--i": index } as CSSProperties}>
-              <span className="bar-label">{step.label}</span>
-              <span className="bar-value tabular">{step.n.toLocaleString("en")}{rate !== null ? <span className="muted funnel-rate"> {rate}%</span> : null}</span>
-              <span className="bar-track" aria-hidden="true"><span className="bar-fill" style={{ transform: `scaleX(${Math.max(step.n / max, step.n ? 0.02 : 0)})` }} /></span>
-            </li>
-          );
+          const rate = index > 0 && previous > 0 ? `${Math.round((step.n / previous) * 100)}%` : null;
+          return <MeterRow key={step.label} index={index} label={step.label} value={step.n} max={max} display={step.n.toLocaleString("en")}
+            aside={rate ? <span className="meter-note tabular">{rate} of previous</span> : undefined} />;
         })}
       </ol>
-      {applied === 0 ? <Encourage text="No applications yet. Your first one is a click away: open a target and press Draft email." /> : null}
-    </div>
+      {applied === 0 ? <p className="card-note">No applications yet. Open a target and press Draft email to send your first.</p> : null}
+    </>
   );
 }

@@ -136,6 +136,10 @@ export interface Source {
 
 export interface Profile {
   name: string;
+  /** What the app calls him in greetings. Default "Brian". */
+  nickname: string;
+  /** Applications he aims to send per week. Default 10. */
+  weeklyGoal: number;
   email: string;
   location: string;
   summary: string;
@@ -201,4 +205,11 @@ export interface Stats {
   modes: StatCount[];
   companies: StatCount[];
   funnel: StatCount[];
+  /** Top skills this week's targets ask for, and whether Brian's CV has each. */
+  skills: { label: string; n: number; inCv: boolean }[];
+  /** Counts out of `total` targets this week. */
+  share: { total: number; remote_open: number; sponsor_yes: number; mid: number; agentic: number };
+  /** Top fresh matches. */
+  best: { id: string; title: string; company: string; location: string; score: number; remote_scope: string; seniority: string; posted_at: string }[];
+  me: { nickname: string; weeklyGoal: number; appliedThisWeek: number };
 }

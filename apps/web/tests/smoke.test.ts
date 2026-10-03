@@ -121,7 +121,7 @@ describe("JobSniper final browser smoke", () => {
 
         expect(response?.status()).toBe(200);
         await page.waitForSelector(".app-shell");
-        await page.waitForFunction(() => document.querySelector(".brand strong")?.textContent?.trim() === "JobSniper");
+        await page.waitForFunction(() => [...document.querySelectorAll(".brand strong, .sidebar-brand strong")].some((node) => node.textContent?.trim() === "JobSniper"));
         await page.waitForFunction(() => Boolean(document.querySelector("main.main-content h1")));
         expect(dashboardRequests).toBeGreaterThan(0);
 
@@ -135,7 +135,7 @@ describe("JobSniper final browser smoke", () => {
 
         const navSelector = width < 640
           ? '.tab-bar a[href="#/targets"]'
-          : '.top-nav a[href="#/targets"]';
+          : width < 1024 ? '.top-nav a[href="#/targets"]' : '.side-nav a[href="#/targets"]';
         await page.click(navSelector);
         await page.waitForFunction(() => {
           return [...document.querySelectorAll("h1")].some((heading) => heading.textContent?.trim() === "Targets");
@@ -150,6 +150,7 @@ describe("JobSniper final browser smoke", () => {
         expect(pageOverflow.body).toBeLessThanOrEqual(pageOverflow.viewport);
         expect(pageOverflow.document).toBeLessThanOrEqual(pageOverflow.viewport);
 
+        expect(await page.$$eval("a.target-row[title], .target-row [title]", (nodes) => nodes.length)).toBe(0);
         await page.click("a.target-row");
         await page.waitForFunction(() => Boolean(document.querySelector(".targets-detail h2")?.textContent?.trim()));
         expect(await page.$eval(".targets-detail h2", (heading) => heading.textContent?.trim())).toBeTruthy();

@@ -38,3 +38,25 @@ describe("outreach utilities", () => {
     expect(filterOutreach(sampleData.outreach, "followup_due").map((item) => item.id)).toEqual(["outreach-3"]);
   });
 });
+
+import { ageGroup, placeLabel } from "../src/utils.ts";
+
+describe("place labels", () => {
+  test("shorten messy listing locations without cutting words", () => {
+    expect(placeLabel("London, United Kingdom", "UK")).toBe("London, UK");
+    expect(placeLabel("Sunnyvale, California USA", "US")).toBe("Sunnyvale, US");
+    expect(placeLabel("San Francisco, CA | New York City, NY | Washington, DC", "US")).toBe("San Francisco, US +2");
+    expect(placeLabel("AU: Sydney (45 Clarence St)", "AU")).toBe("Sydney, Australia");
+    expect(placeLabel("Europe, USA, UK, Canada, Australia, Ireland", "Other")).toBe("5 countries");
+    expect(placeLabel("Singapore", "SG")).toBe("Singapore");
+    expect(placeLabel("Berlin, DE", "DE")).toBe("Berlin, Germany");
+    expect(placeLabel("", "")).toBe("Location not stated");
+  });
+
+  test("group rows by age", () => {
+    const now = new Date(2026, 9, 3, 15, 0);
+    expect(ageGroup(new Date(2026, 9, 3, 9, 0).toISOString(), now)).toBe("Today");
+    expect(ageGroup(new Date(2026, 9, 1, 9, 0).toISOString(), now)).toBe("This week");
+    expect(ageGroup(new Date(2026, 8, 1, 9, 0).toISOString(), now)).toBe("Older");
+  });
+});
