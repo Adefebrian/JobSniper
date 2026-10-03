@@ -6,6 +6,8 @@ import { SettingsRepository } from "./repo";
 
 export type SettingsView = {
   name: string;
+  nickname: string;
+  weeklyGoal: number;
   email: string;
   location: string;
   summary: string;
@@ -174,7 +176,9 @@ const COUNTRY_NAMES: Record<string, string> = {
 export function settingsView(settings: Settings): SettingsView {
   const profile = settings.profile as Record<string, unknown>;
   return {
-    name: String(profile.name ?? ""), email: String(profile.email ?? ""), location: String(profile.location ?? ""),
+    name: String(profile.name ?? ""), nickname: String(profile.nickname ?? "Brian"),
+    weeklyGoal: Number(profile.weeklyGoal ?? 10) || 10,
+    email: String(profile.email ?? ""), location: String(profile.location ?? ""),
     summary: String(profile.summary ?? ""), skills: Array.isArray(profile.skills) ? profile.skills.map(String) : [],
     availability: String(profile.availability ?? ""),
     cvVariants: Object.entries(settings.cvVariants).map(([id, fileName]) => ({
@@ -235,6 +239,8 @@ export class SettingsService {
       ...current,
       profile: {
         ...current.profile,
+        ...(view.nickname === undefined ? {} : { nickname: String(view.nickname).trim().slice(0, 40) || "Brian" }),
+        ...(view.weeklyGoal === undefined ? {} : { weeklyGoal: Math.max(1, Math.min(100, Math.round(Number(view.weeklyGoal) || 10))) }),
         ...(view.name === undefined ? {} : {
           name: view.name,
           email: view.email ?? "",

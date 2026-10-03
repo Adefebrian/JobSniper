@@ -56,6 +56,21 @@ function cvHtml(cv: TailoredCv): string {
   </body></html>`;
 }
 
+// Skills an AI-SWE role commonly asks for; counted in this week's targets and checked against the CV.
+const SKILLS: Array<[string, RegExp]> = [
+  ["Python", /\bpython\b/i], ["TypeScript", /\btypescript\b/i], ["JavaScript", /\bjavascript\b/i], ["Go", /\bgolang\b|\bgo\b(?= |,|\))/],
+  ["Rust", /\brust\b/i], ["Java", /\bjava\b/i], ["Kotlin", /\bkotlin\b/i], ["C++", /c\+\+/i], ["React", /\breact\b/i],
+  ["Next.js", /next\.js/i], ["Node.js", /node\.?js/i], ["Bun", /\bbun\b/i], ["SQL", /\bsql\b/i], ["PostgreSQL", /postgres/i],
+  ["Redis", /\bredis\b/i], ["Kafka", /\bkafka\b/i], ["Docker", /\bdocker\b/i], ["Kubernetes", /kubernetes|\bk8s\b/i],
+  ["AWS", /\baws\b/i], ["GCP", /\bgcp\b|google cloud/i], ["Azure", /\bazure\b/i], ["Terraform", /terraform/i],
+  ["LLMs", /\bllms?\b|large language model/i], ["RAG", /\brag\b|retrieval[- ]augmented/i], ["AI agents", /agentic|ai agents?|\bagents\b/i],
+  ["Prompt engineering", /prompt engineering/i], ["Evals", /\bevals?\b|evaluation harness/i], ["Fine-tuning", /fine[- ]tun/i],
+  ["PyTorch", /pytorch/i], ["TensorFlow", /tensorflow/i], ["LangChain", /langchain/i], ["Vector DBs", /vector (database|db|store|search)|pinecone|weaviate|pgvector/i],
+  ["OpenAI API", /openai/i], ["Anthropic API", /anthropic|claude/i], ["MLOps", /mlops/i], ["GraphQL", /graphql/i],
+  ["REST APIs", /\brest(ful)?\b/i], ["Microservices", /microservice/i], ["CI/CD", /ci\/cd|continuous (integration|delivery)/i],
+  ["Distributed systems", /distributed systems?/i], ["System design", /system design/i],
+];
+
 const slugPart = (v: string) => v.replace(/[^A-Za-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40);
 
 const REMOTE: Record<string, string> = {
@@ -321,7 +336,33 @@ export function mountWebContract(app: Hono, s: Services): void {
       { label: "Applied", n: Number(totals?.applied ?? 0) },
       { label: "Replied", n: Number(totals?.replied ?? 0) },
     ];
-    return ok({ totals, daily, roles, countries, levels, modes, companies, funnel });
+    // Personal layer: what the market asks for vs Brian's CV, how open it is to him, and today's best.
+    const weekJobs = await q<{ jd: string }>(`SELECT coalesce(j.jd_text_english, j.jd_text) AS jd FROM jobs j WHERE ${week} LIMIT 600`);
+    const profile = ((await q<{ value: Row }>("SELECT value FROM settings WHERE key = 'app'"))[0]?.value?.profile ?? {}) as Row;
+    const cvSkills = (Array.isArray(profile.skills) ? profile.skills : []).map((x) => String(x).toLowerCase());
+    const skills = SKILLS.map(([label, re]) => ({
+      label,
+      n: weekJobs.filter((j) => re.test(j.jd)).length,
+      inCv: cvSkills.some((c) => c.includes(label.toLowerCase().replace(/s$/, "")) || label.toLowerCase().includes(c)),
+    })).filter((x) => x.n > 0).sort((a, b) => b.n - a.n).slice(0, 12);
+    const [share] = await q(`
+      SELECT count(*)::int AS total,
+             count(*) FILTER (WHERE j.remote_scope IN ('remote_global','remote_apac'))::int AS remote_open,
+             count(*) FILTER (WHERE j.sponsorship = 'yes')::int AS sponsor_yes,
+             count(*) FILTER (WHERE j.seniority = 'mid')::int AS mid,
+             count(*) FILTER (WHERE coalesce(j.agentic_focus, 0) >= 0.6)::int AS agentic
+      FROM jobs j WHERE ${week}`);
+    const best = await q(`
+      SELECT j.id, j.title, c.name AS company, j.location, round(j.score)::int AS score, j.remote_scope, j.seniority,
+             coalesce(j.posted_at, j.first_seen_at) AS posted_at
+      FROM jobs j JOIN companies c ON c.id = j.company_id
+      WHERE j.status = 'targeted' AND j.closed_at IS NULL AND coalesce(j.posted_at, j.first_seen_at) > now() - interval '72 hours'
+      ORDER BY j.score DESC NULLS LAST LIMIT 3`);
+    const goal = Number(profile.weeklyGoal ?? 10) || 10;
+    return ok({
+      totals, daily, roles, countries, levels, modes, companies, funnel, skills, share, best,
+      me: { nickname: String(profile.nickname ?? "Brian"), weeklyGoal: goal, appliedThisWeek: Number(totals?.applied_week ?? 0) },
+    });
   });
 
   app.get("/api/targets/:id/tailored-cv", async (context) => {
