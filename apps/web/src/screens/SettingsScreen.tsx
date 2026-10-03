@@ -94,6 +94,12 @@ export function SettingsScreen({ status, settings, onSave, onReloadSettings }: P
           </Group>
 
 
+          <Group title="About" description="JobSniper, version 0.1.0.">
+            <div className="about-body">
+              <p>Developed by <strong>Brian</strong> to find his next AI engineering role.</p>
+              <p><a href="https://adefebrian.com" target="_blank" rel="noreferrer">adefebrian.com</a> · <a href="https://github.com/Adefebrian/JobSniper" target="_blank" rel="noreferrer">Source on GitHub</a></p>
+            </div>
+          </Group>
           <Group title="Countries and weights" description="How much each country and each score part counts. Unlisted countries use Other.">
             <div className="weight-grid">
               {form.countries.map((country, index) => (

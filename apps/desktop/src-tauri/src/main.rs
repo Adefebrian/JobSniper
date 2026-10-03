@@ -13,7 +13,10 @@ use std::process::{Child, Command, Stdio};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
-use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
+use tauri::menu::{AboutMetadataBuilder, Menu, MenuItem, PredefinedMenuItem, Submenu};
+use tauri::utils::config::WindowEffectsConfig;
+use tauri::window::{Effect, EffectState};
+use tauri::{TitleBarStyle, WebviewUrl, WebviewWindowBuilder};
 use tauri::tray::TrayIconBuilder;
 use tauri::{AppHandle, Manager, RunEvent, WindowEvent};
 use tauri_plugin_autostart::{MacosLauncher, ManagerExt};
@@ -118,11 +121,88 @@ fn open_dashboard_when_ready(app: AppHandle) {
     });
 }
 
+/// Links that leave the local dashboard (apply pages, listings, adefebrian.com) open in the
+/// default browser instead of replacing the app's own view.
+fn is_local(url: &url::Url) -> bool {
+    matches!(url.scheme(), "tauri" | "asset")
+        || (url.host_str() == Some("127.0.0.1") && url.port() == Some(PORT))
+        || url.host_str() == Some("tauri.localhost")
+}
+
+fn open_external(url: &url::Url) {
+    if matches!(url.scheme(), "http" | "https" | "mailto") {
+        let _ = Command::new("/usr/bin/open").arg(url.as_str()).spawn();
+    }
+}
+
+fn build_menu(app: &tauri::App) -> tauri::Result<Menu<tauri::Wry>> {
+    let about = AboutMetadataBuilder::new()
+        .name(Some("JobSniper"))
+        .version(Some(env!("CARGO_PKG_VERSION")))
+        .copyright(Some("Developed by Brian · adefebrian.com"))
+        .credits(Some("Built by Brian to find his next AI engineering role.\nhttps://adefebrian.com"))
+        .website(Some("https://adefebrian.com"))
+        .website_label(Some("adefebrian.com"))
+        .authors(Some(vec!["Brian".to_string()]))
+        .build();
+    let app_menu = Submenu::with_items(app, "JobSniper", true, &[
+        &PredefinedMenuItem::about(app, Some("About JobSniper"), Some(about))?,
+        &PredefinedMenuItem::separator(app)?,
+        &PredefinedMenuItem::hide(app, None)?,
+        &PredefinedMenuItem::hide_others(app, None)?,
+        &PredefinedMenuItem::separator(app)?,
+        &PredefinedMenuItem::quit(app, None)?,
+    ])?;
+    let edit = Submenu::with_items(app, "Edit", true, &[
+        &PredefinedMenuItem::undo(app, None)?,
+        &PredefinedMenuItem::redo(app, None)?,
+        &PredefinedMenuItem::separator(app)?,
+        &PredefinedMenuItem::cut(app, None)?,
+        &PredefinedMenuItem::copy(app, None)?,
+        &PredefinedMenuItem::paste(app, None)?,
+        &PredefinedMenuItem::select_all(app, None)?,
+    ])?;
+    let window = Submenu::with_items(app, "Window", true, &[
+        &PredefinedMenuItem::minimize(app, None)?,
+        &PredefinedMenuItem::maximize(app, None)?,
+        &PredefinedMenuItem::close_window(app, None)?,
+    ])?;
+    Menu::with_items(app, &[&app_menu, &edit, &window])
+}
+
 fn main() {
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_autostart::init(MacosLauncher::LaunchAgent, None))
         .setup(|app| {
             let handle = app.handle().clone();
+            app.set_menu(build_menu(app)?)?;
+            WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
+                .title("JobSniper")
+                .inner_size(1280.0, 820.0)
+                .min_inner_size(380.0, 560.0)
+                .title_bar_style(TitleBarStyle::Overlay)
+                .hidden_title(true)
+                .transparent(true)
+                .effects(WindowEffectsConfig {
+                    effects: vec![Effect::Sidebar],
+                    state: Some(EffectState::FollowsWindowActiveState),
+                    radius: None,
+                    color: None,
+                    interactive: false,
+                })
+                .on_navigation(|url| {
+                    if is_local(url) {
+                        true
+                    } else {
+                        open_external(url);
+                        false
+                    }
+                })
+                .on_new_window(|url, _features| {
+                    open_external(&url);
+                    tauri::webview::NewWindowResponse::Deny
+                })
+                .build()?;
             // Always on: hourly crawling only works while the app runs, so it starts at login.
             if let Ok(false) = handle.autolaunch().is_enabled() {
                 let _ = handle.autolaunch().enable();

@@ -53,6 +53,9 @@ export function AppShell({ route, status, counts, children }: Props) {
           {routes.map((item) => link(item, item.label, true))}
         </nav>
         <LastCrawl status={status} />
+        <a className="credit" href="https://adefebrian.com" target="_blank" rel="noreferrer">
+          Developed by <strong>Brian</strong> · adefebrian.com
+        </a>
       </aside>
       <header className="topbar" data-tauri-drag-region>
         <a className="brand" href="#/overview" aria-label="JobSniper home"><strong>JobSniper</strong></a>

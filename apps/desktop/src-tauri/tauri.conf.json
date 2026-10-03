@@ -7,26 +7,7 @@
     "frontendDist": "../loading"
   },
   "app": {
-    "windows": [
-      {
-        "label": "main",
-        "title": "JobSniper",
-        "width": 1280,
-        "height": 820,
-        "minWidth": 380,
-        "minHeight": 560,
-        "resizable": true,
-        "titleBarStyle": "Overlay",
-        "hiddenTitle": true,
-        "transparent": true,
-        "windowEffects": {
-          "effects": [
-            "sidebar"
-          ],
-          "state": "followsWindowActiveState"
-        }
-      }
-    ],
+    "windows": [],
     "security": {
       "csp": null
     },
@@ -55,6 +36,8 @@
     },
     "macOS": {
       "minimumSystemVersion": "13.0"
-    }
+    },
+    "copyright": "Developed by Brian · adefebrian.com",
+    "publisher": "Brian (adefebrian.com)"
   }
 }
