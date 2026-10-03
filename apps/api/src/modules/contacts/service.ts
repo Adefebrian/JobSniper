@@ -46,7 +46,13 @@ export class ContactsService {
     const company = await this.repository.nextCompanyToSearch();
     if (!company) return { found: 0 };
     await this.repository.markSearched(company.id);
-    const found = await searchRecruiterEmails(company.name);
+    let found;
+    try {
+      found = await searchRecruiterEmails(company.name);
+    } catch (error) {
+      await this.repository.unmarkSearched(company.id); // try this company again later
+      throw error;
+    }
     let kept = 0;
     for (const item of found) {
       let verdict: unknown;

@@ -57,7 +57,11 @@ const maintenance = new RuntimeMaintenance({
     // One public-email search per company every 45 s for targets that have no email (PRD 8.1).
     if (Date.now() >= nextSearchAt) {
       nextSearchAt = Date.now() + 45_000;
-      await app.contacts.recruiterSearchOnce().catch((error) => console.error("recruiter search:", error));
+      await app.contacts.recruiterSearchOnce().catch((error: Error) => {
+        // Rate limited or blocked: rest the search engine for 30 minutes, never hammer it.
+        nextSearchAt = Date.now() + 30 * 60_000;
+        console.error(`recruiter search paused 30 min: ${error.message}`);
+      });
     }
     // Approved emails go out one at a time with a random 4 to 12 minute gap (PRD 8.3);
     // sendDue itself enforces the recipient's work window and the daily cap.

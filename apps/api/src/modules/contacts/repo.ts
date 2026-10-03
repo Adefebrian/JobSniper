@@ -19,6 +19,10 @@ export class ContactsRepository {
     return result.rows[0];
   }
 
+  async unmarkSearched(companyId: string): Promise<void> {
+    await this.database.query("UPDATE companies SET recruiter_searched_at = NULL WHERE id = $1", [companyId]);
+  }
+
   async markSearched(companyId: string): Promise<void> {
     await this.database.query("UPDATE companies SET recruiter_searched_at = now() WHERE id = $1", [companyId]);
   }
