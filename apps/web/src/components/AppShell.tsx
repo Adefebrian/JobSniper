@@ -18,9 +18,9 @@ interface Props {
 export function AppShell({ route, status, children }: Props) {
   return (
     <div className="app-shell">
-      <header className="topbar">
+      <header className="topbar" data-tauri-drag-region>
         <a className="brand" href="#/targets" aria-label="JobSniper home"><strong>JobSniper</strong></a>
-        <nav className="top-nav" aria-label="Primary navigation">
+        <nav className="top-nav" aria-label="Primary navigation" data-tauri-drag-region>
           {routes.map((item) => (
             <a key={item.id} href={item.href} className={route === item.id ? "active" : undefined} aria-current={route === item.id ? "page" : undefined}>{item.label}</a>
           ))}

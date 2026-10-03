@@ -11,10 +11,10 @@ export function StatusStrip({ status }: { status: StatusData }) {
     { label: "Blocked", value: String(status.blockedSources), warn: status.blockedSources > 0 },
   ];
   return (
-    <section className="status-strip" aria-label="System status">
-      <dl>
+    <section className="status-strip" aria-label="System status" data-tauri-drag-region>
+      <dl data-tauri-drag-region>
         {items.map((item) => (
-          <div key={item.label} className={item.warn ? "status-item is-warn" : "status-item"}>
+          <div key={item.label} className={item.warn ? "status-item is-warn" : "status-item"} data-tauri-drag-region>
             <dt>{item.label}</dt>
             <dd>{item.value}</dd>
           </div>

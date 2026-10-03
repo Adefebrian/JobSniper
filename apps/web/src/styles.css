@@ -591,3 +591,97 @@ input[type="checkbox"] { width: 20px; height: 20px; margin: 0; accent-color: var
 @media (prefers-reduced-motion: reduce) {
   * { transition-duration: 0ms !important; animation: none !important; }
 }
+
+/* ------------------------------------------------------------------
+ * macOS app shell (JobSniper.app). The window is transparent over native
+ * vibrancy; chrome is glass, reading surfaces are solid white sheets.
+ * Light only. Translucent chrome material approved by Brian.
+ * ------------------------------------------------------------------ */
+[data-shell="mac"] {
+  --glass-tint: rgba(255, 255, 255, 0.35);
+  --glass-hairline: rgba(0, 0, 0, 0.08);
+  --glass-hover: rgba(0, 0, 0, 0.05);
+  --glass-selected: rgba(31, 86, 196, 0.12);
+  --sheet-radius: 16px;
+  --sheet-gap: 10px;
+  --radius-8: 10px;
+  --color-border-control: rgba(0, 0, 0, 0.42);
+  --color-layer-1: rgba(0, 0, 0, 0.04);
+  --color-layer-2: rgba(0, 0, 0, 0.07);
+  --state-hover: rgba(0, 0, 0, 0.05);
+}
+/* Dark system appearance darkens the native material: thicken the tint so ink stays readable. */
+@media (prefers-color-scheme: dark) {
+  [data-shell="mac"] { --glass-tint: rgba(255, 255, 255, 0.72); }
+}
+
+[data-shell="mac"],
+[data-shell="mac"] body,
+[data-shell="mac"] #root { background: transparent; }
+
+[data-shell="mac"] .app-shell { background: transparent; }
+
+[data-shell="mac"] .topbar {
+  min-height: 52px;
+  padding: 0 var(--space-16px) 0 84px;
+  background: var(--glass-tint);
+  -webkit-backdrop-filter: blur(24px) saturate(160%);
+  backdrop-filter: blur(24px) saturate(160%);
+  border-bottom-color: var(--glass-hairline);
+  -webkit-user-select: none;
+  user-select: none;
+}
+[data-shell="mac"] .status-strip {
+  background: var(--glass-tint);
+  border-bottom-color: var(--glass-hairline);
+  -webkit-user-select: none;
+  user-select: none;
+}
+[data-shell="mac"] .top-nav a:hover,
+[data-shell="mac"] .tab-bar a:hover { background: var(--glass-hover); }
+[data-shell="mac"] .top-nav a.active,
+[data-shell="mac"] .tab-bar a.active { background: rgba(0, 0, 0, 0.08); }
+[data-shell="mac"] .tab-bar {
+  background: var(--glass-tint);
+  -webkit-backdrop-filter: blur(24px) saturate(160%);
+  backdrop-filter: blur(24px) saturate(160%);
+  border-top-color: var(--glass-hairline);
+}
+
+/* Every screen is a white sheet floating on the glass. */
+[data-shell="mac"] .main-content { padding: var(--sheet-gap); }
+[data-shell="mac"] .page {
+  background: var(--color-surface);
+  border-radius: var(--sheet-radius);
+  min-height: 100%;
+}
+[data-shell="mac"] .page-split { overflow: clip; }
+
+[data-shell="mac"] .rows,
+[data-shell="mac"] .table-wrap,
+[data-shell="mac"] .state-panel { border-radius: 12px; }
+[data-shell="mac"] .tag { border-color: transparent; }
+[data-shell="mac"] .tag:not(.tag-plain):not(.tag-good):not(.tag-warn):not(.tag-bad) { background: rgba(0, 0, 0, 0.05); }
+[data-shell="mac"] .target-row.is-active { background: var(--glass-selected); }
+
+/* Wide window: the list column joins the glass, the detail is the sheet. */
+@media (min-width: 1024px) {
+  [data-shell="mac"] .main-content:has(> .page-split) { padding: 0 var(--sheet-gap) 0 0; }
+  [data-shell="mac"] .page-split { background: transparent; border-radius: 0; overflow: visible; }
+  [data-shell="mac"] .targets { gap: var(--sheet-gap); }
+  [data-shell="mac"] .targets-list {
+    background: var(--glass-tint);
+    -webkit-backdrop-filter: blur(24px) saturate(160%);
+    backdrop-filter: blur(24px) saturate(160%);
+  }
+  [data-shell="mac"] .target-rows,
+  [data-shell="mac"] .target-rows > li + li { border-color: var(--glass-hairline); }
+  [data-shell="mac"] .target-row:hover { background: var(--glass-hover); }
+  [data-shell="mac"] .target-row.is-active { background: var(--glass-selected); }
+  [data-shell="mac"] .targets-detail {
+    margin-block: var(--sheet-gap);
+    background: var(--color-surface);
+    border-radius: var(--sheet-radius);
+  }
+  [data-shell="mac"] .page-split > .notice { margin: var(--sheet-gap) 0 0; }
+}
