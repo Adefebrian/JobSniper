@@ -6,6 +6,7 @@ import type { Clock, IdGenerator, JevPort, LunaPort } from "./ports";
 import { judgeJob, monthlyBudgetAllows, scoreJob, type Judgment } from "./judging";
 import { parseLocation, workModeOf } from "./location";
 import { prefilterJob } from "./prefilter";
+import { detectApplyEmail } from "./apply-email";
 import { localAgenticFocus, preferenceModel, type FeedbackExample } from "./preference";
 import { BrainRepository, type JobRow } from "./repo";
 
@@ -224,9 +225,14 @@ export class BrainService {
       weights: settings.scoringWeights,
     });
     // Brian's focus multipliers: agentic / AI-assisted work 0.7..1.0, liked-vs-disliked fit 0.6..1.0.
+    // The sniper's main target: a job Brian can apply to by email gets a strong lift.
+    const apply = detectApplyEmail(englishText, typeof row.apply_url === "string" ? row.apply_url : null)
+      ?? (englishText === jdText ? null : detectApplyEmail(jdText, null));
+    await this.repository.setApply(id, apply);
+    const applyFactor = apply ? 1.3 : 1;
     const focusFactor = 0.7 + 0.3 * verdicts.agenticFocus;
     const preferenceFactor = verdicts.preferenceFit === null ? 1 : 0.6 + 0.4 * verdicts.preferenceFit;
-    const finalScore = Math.round(breakdown.score * focusFactor * preferenceFactor * 10) / 10;
+    const finalScore = Math.min(100, Math.round(breakdown.score * focusFactor * preferenceFactor * applyFactor * 10) / 10);
     await this.repository.setFocus(id, verdicts.agenticFocus, verdicts.preferenceFit);
     await this.repository.updateClassification(id, {
       remoteScope: verdicts.remoteScope,
@@ -242,7 +248,7 @@ export class BrainService {
       score: reject ? 0 : finalScore,
       scoreBreakdown: {
         ...breakdown, score: finalScore, agenticFocus: verdicts.agenticFocus, focusFactor,
-        preferenceFit: verdicts.preferenceFit, preferenceFactor, skillsMatched: skill.matched, jevVerified: verdicts.verifiedByJev,
+        preferenceFit: verdicts.preferenceFit, preferenceFactor, applyByEmail: Boolean(apply), applyFactor, skillsMatched: skill.matched, jevVerified: verdicts.verifiedByJev,
       } as never,
       skipReason: reject,
       jevVerified: verdicts.verifiedByJev,

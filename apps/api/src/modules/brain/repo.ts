@@ -50,6 +50,27 @@ export class BrainRepository {
     return result.rows[0]?.verdict ?? null;
   }
 
+  async setApply(id: string, apply: { email: string; quote: string } | null): Promise<void> {
+    await this.database.query(
+      `UPDATE jobs SET apply_method = CASE WHEN $2::text IS NULL THEN (CASE WHEN apply_method = 'email' THEN 'unknown' ELSE apply_method END) ELSE 'email' END,
+                       apply_email = $2, apply_quote = $3 WHERE id = $1`,
+      [id, apply?.email ?? null, apply?.quote ?? null],
+    );
+    if (apply) {
+      await this.database.query(
+        `INSERT INTO contacts (id, company_id, job_id, email, role, kind, source_url, source_quote)
+         SELECT gen_random_uuid(), j.company_id, j.id, $2, 'apply',
+                CASE WHEN s.trust = 'public_listing' THEN 'portal_public' ELSE 'public' END, j.url, $3
+         FROM jobs j LEFT JOIN sources s ON s.id = j.source_id
+         WHERE j.id = $1
+           AND NOT EXISTS (SELECT 1 FROM do_not_contact d WHERE d.email_or_domain IN (lower($2), split_part(lower($2), '@', 2)))
+         ON CONFLICT DO NOTHING`,
+        [id, apply.email, apply.quote],
+      );
+      await this.database.query("UPDATE contacts SET role = 'apply' WHERE job_id = $1 AND lower(email) = lower($2)", [id, apply.email]);
+    }
+  }
+
   async setFocus(id: string, agenticFocus: number, preferenceFit: number | null): Promise<void> {
     await this.database.query(
       "UPDATE jobs SET agentic_focus = $2, preference_fit = $3, needs_rescore = false WHERE id = $1",

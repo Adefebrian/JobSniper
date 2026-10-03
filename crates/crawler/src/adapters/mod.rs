@@ -27,6 +27,7 @@ pub enum AdapterKind {
     Lever,
     Ashby,
     Workday,
+    HnWhoIsHiring,
 }
 
 #[derive(Debug, Clone)]
@@ -52,6 +53,7 @@ impl AdapterRegistry {
                 "lever" => Ok(AdapterKind::Lever),
                 "ashby" => Ok(AdapterKind::Ashby),
                 "workday_cxs" | "workday" => Ok(AdapterKind::Workday),
+                "hn_whoishiring" => Ok(AdapterKind::HnWhoIsHiring),
                 "json_api" => Ok(AdapterKind::JsonApi),
                 "rss" => Ok(AdapterKind::Rss),
                 "sitemap" => Ok(AdapterKind::Sitemap),
@@ -139,6 +141,7 @@ impl AdapterRegistry {
             AdapterKind::Lever => sources::lever::fetch_page(http, request).await,
             AdapterKind::Ashby => sources::ashby::fetch_page(http, request).await,
             AdapterKind::Workday => sources::workday::fetch_page(http, request, cursor).await,
+            AdapterKind::HnWhoIsHiring => sources::hn::fetch_page(http, request).await,
         }
     }
 }
