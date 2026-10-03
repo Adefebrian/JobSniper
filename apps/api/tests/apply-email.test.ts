@@ -20,3 +20,16 @@ describe("apply-by-email detector", () => {
     expect(detectApplyEmail("Our office manager is jane@acme.ai and we love coffee.", null)).toBeNull();
   });
 });
+
+describe("apply-by-email detector rejects non-application addresses", () => {
+  test("accommodation and security addresses", () => {
+    expect(detectApplyEmail("If you need a reasonable accommodation to apply, email accommodations-ext@figma.com.", null)).toBeNull();
+    expect(detectApplyEmail("Send your application details to security-esk@contentful.com for review.", null)).toBeNull();
+  });
+  test("an impossible domain from a bad de-obfuscation", () => {
+    expect(detectApplyEmail("Send your CV to directly@vishnu.swaroop for this role.", null)).toBeNull();
+  });
+  test("hiring mailbox in a job sentence still counts", () => {
+    expect(detectApplyEmail("We are hiring a founding engineer: careers@acme.ai", null)?.email).toBe("careers@acme.ai");
+  });
+});

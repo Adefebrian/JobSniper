@@ -1,6 +1,6 @@
 use crate::adapters::{page_with_jobs, FetchRequest};
 use crate::error::{CrawlerError, Result};
-use crate::extract::{extract_emails, parse_datetime, strip_html};
+use crate::extract::{extract_emails, html_to_blocks, parse_datetime, strip_html};
 use crate::http::HttpClient;
 use crate::model::{AdapterPage, JobRecord, JobSourceKind};
 use serde_json::Value;
@@ -58,7 +58,7 @@ pub fn parse_ashby(body: &str) -> Result<AdapterPage> {
                 .get("location")
                 .and_then(Value::as_str)
                 .map(str::to_owned),
-            description: strip_html(description),
+            description: html_to_blocks(description),
             posted_at: job
                 .get("publishedAt")
                 .or_else(|| job.get("publishedDate"))

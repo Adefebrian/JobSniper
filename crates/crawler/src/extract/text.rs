@@ -19,6 +19,36 @@ pub fn strip_html(value: &str) -> String {
     normalize_whitespace(&decode_html_entities(&without_tags))
 }
 
+/// HTML job description -> readable plain text that keeps its structure: paragraphs on their own
+/// lines, list items as "• ...", headings as "## ...". The UI renders these as blocks.
+pub fn html_to_blocks(value: &str) -> String {
+    static LI: OnceLock<Regex> = OnceLock::new();
+    static HEADING: OnceLock<Regex> = OnceLock::new();
+    static BLOCK: OnceLock<Regex> = OnceLock::new();
+    static TAG: OnceLock<Regex> = OnceLock::new();
+    let li = LI.get_or_init(|| Regex::new(r"(?i)<li\b[^>]*>").expect("li regex"));
+    let heading = HEADING.get_or_init(|| Regex::new(r"(?i)<h[1-6]\b[^>]*>").expect("heading regex"));
+    let block = BLOCK.get_or_init(|| {
+        Regex::new(r"(?i)</?(?:br|p|div|section|article|ul|ol|table|tr|h[1-6]|/li)\b[^>]*>|</li>").expect("block regex")
+    });
+    let tag = TAG.get_or_init(|| Regex::new(r"(?s)<[^>]*>").expect("tag regex"));
+    // Greenhouse ships entity-escaped HTML: decode once to get real tags.
+    let decoded = decode_html_entities(value);
+    let marked = li.replace_all(&decoded, "\n• ");
+    let marked = heading.replace_all(&marked, "\n## ");
+    let marked = block.replace_all(&marked, "\n");
+    let text = decode_html_entities(&tag.replace_all(&marked, ""));
+    let mut out: Vec<String> = Vec::new();
+    for line in text.lines() {
+        let line = normalize_whitespace(line);
+        if line.is_empty() || line == "•" || line == "##" {
+            continue;
+        }
+        out.push(line);
+    }
+    out.join("\n")
+}
+
 pub fn extract_emails(value: &str) -> Vec<String> {
     static EMAIL: OnceLock<Regex> = OnceLock::new();
     let pattern = EMAIL.get_or_init(|| {
@@ -111,6 +141,17 @@ fn decode_html_entities(value: &str) -> String {
         .replace("&lt;", "<")
         .replace("&gt;", ">");
     decoded
+}
+
+#[cfg(test)]
+mod blocks_tests {
+    use super::html_to_blocks;
+
+    #[test]
+    fn keeps_paragraphs_lists_and_headings() {
+        let html = "&lt;h3&gt;About&lt;/h3&gt;&lt;p&gt;We build  agents.&lt;/p&gt;&lt;ul&gt;&lt;li&gt;Rust&lt;/li&gt;&lt;li&gt;LLMs&lt;/li&gt;&lt;/ul&gt;";
+        assert_eq!(html_to_blocks(html), "## About\nWe build agents.\n• Rust\n• LLMs");
+    }
 }
 
 #[cfg(test)]

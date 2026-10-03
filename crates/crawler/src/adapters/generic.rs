@@ -72,7 +72,7 @@ pub fn parse_json_api(body: &str, config: &Value) -> Result<AdapterPage> {
             company: mapped(item, &config.fields, "company"),
             location: mapped(item, &config.fields, "location"),
             description: mapped(item, &config.fields, "description")
-                .map(|value| strip_html(&value))
+                .map(|value| crate::extract::html_to_blocks(&value))
                 .unwrap_or_default(),
             posted_at: mapped(item, &config.fields, "posted_at")
                 .and_then(|value| parse_datetime(&value)),

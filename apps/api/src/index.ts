@@ -23,10 +23,12 @@ const config = loadConfig();
 const database = new PostgresDatabase(config.databaseUrl);
 const migrations = await migrateDatabase(database);
 const credentials = new MacKeychainCredentialStore();
+const jevClient = new JevClient(config.jevModel, credentials, config.jevUrl);
 const sniper = new SniperService(
   database,
   credentials,
   process.env.LIGHTPANDA_PATH ?? `${homedir()}/Library/Application Support/JobSniper/bin/lightpanda-bin`,
+  jevClient,
 );
 const gmailAuth = new GmailAuth(credentials, `http://127.0.0.1:${config.port}/api/gmail/callback`);
 const mail = config.mailProvider === "smtp"
@@ -41,7 +43,7 @@ const mail = config.mailProvider === "smtp"
 const app = createApiApp({
   database,
   luna: new LunaClient(config.openAiBaseUrl, config.lunaModel, credentials),
-  jev: new JevClient(config.jevModel, credentials, config.jevUrl),
+  jev: jevClient,
   clock: new SystemClock(),
   ids: new CryptoIdGenerator(),
   mail,

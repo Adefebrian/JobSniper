@@ -4,12 +4,15 @@
 import { createHash } from "node:crypto";
 import type { CredentialStore } from "@core/ports/runtime";
 import type { Queryable } from "@core/ports/database";
+import type { JevPort } from "@core/ports/ai";
 import { detectApplyEmail, parseLocation } from "../brain";
 import { readPage } from "./page";
 import { QUERY_SPACE, queryAt, resolveProvider } from "./search";
 
 // Free tiers: Brave ~2,000 queries/month, Google CSE 100/day, Serper 2,500 one-off credits.
-const INTERVAL_MIN: Record<string, number> = { brave: 25, google_cse: 15, serper: 20 };
+const INTERVAL_MIN: Record<string, number> = { brave: 25, google_cse: 15, serper: 20, yahoo_headless: 6 };
+// Listing and search pages are not a job post: skip them before spending a page read.
+const LISTING_URL = /(-jobs-in-|jobs-in-|\/jobs\/?$|\/jobs\?|\/search|\/role\/l\/|\/q-|\/jobs\/[a-z-]+-jobs|\/careers\/?$|\/blog\/|\/employer-blog\/|cv-writing)/i;
 const FREEMAIL = /@(gmail|googlemail|yahoo|outlook|hotmail|live|icloud|me|proton|protonmail|aol|gmx|zoho|yandex)\./i;
 const ROLE_LINE =
   /(?:hiring|looking for|seeking|join us as|we need|open (?:role|position)s?:?|position:?|role:?)\s+(?:an?\s+|our\s+|(?:a\s+)?(?:new\s+)?)((?:senior |junior |lead |staff |principal |founding |mid[- ]level )?[A-Z][A-Za-z/+&.\- ]{1,50}?(?:Engineer|Developer|Architect))/;
@@ -38,6 +41,7 @@ export class SniperService {
     private readonly db: Queryable,
     private readonly credentials: CredentialStore,
     private readonly lightpandaPath: string,
+    private readonly jev?: JevPort,
   ) {}
 
   status() {
@@ -47,7 +51,7 @@ export class SniperService {
   /** Called every tick; runs one query when its provider's pacing allows. */
   async tick(): Promise<void> {
     if (Date.now() < this.nextRunAt) return;
-    const provider = await resolveProvider(this.credentials);
+    const provider = await resolveProvider(this.credentials, this.lightpandaPath);
     if (!provider) {
       this.lastStatus = { state: "idle", reason: "Add a Brave Search, Serper or Google search key in Settings > Connections." };
       this.nextRunAt = Date.now() + 5 * 60_000;
@@ -82,6 +86,7 @@ export class SniperService {
   }
 
   private async consider(hit: { url: string; title: string; snippet: string }, query: string): Promise<string> {
+    if (LISTING_URL.test(hit.url)) return this.record(hit.url, query, "not_job");
     const page = await readPage(hit.url, this.lightpandaPath);
     if (page === "blocked") return this.record(hit.url, query, "blocked");
     const pageText = page?.text ?? "";
@@ -91,6 +96,21 @@ export class SniperService {
     const apply = fromPage ?? fromSnippet;
     if (!apply) return this.record(hit.url, query, "no_email");
     const jd = fromPage ? pageText : `${pageText}\n\n${hit.snippet}`.trim();
+    // Jev decides whether this is one real job post inviting email applications (not a list, a blog
+    // or a CV service). Without Jev the page is kept and the brain's own checks still apply.
+    if (this.jev?.ask) {
+      try {
+        const answers = await this.jev.ask(
+          { url: hit.url, title: page?.title || hit.title, apply_email: apply.email, apply_sentence: apply.quote, page: jd.slice(0, 6_000) },
+          { single_post: { type: "noul", instructions: "This page is a single job posting (one role, or one company's openings) that invites candidates to apply by sending an email to the given address. It is not a list of many companies' jobs, a search result page, a blog article, or a CV writing service." } },
+        );
+        if (typeof answers.single_post?.noul === "number" && answers.single_post.noul < 0.5) {
+          return this.record(hit.url, query, "not_job");
+        }
+      } catch {
+        // Jev unreachable: keep the page; the judge still has to pass it
+      }
+    }
     const who = company(page?.siteName ?? null, apply.email, hit.url);
     const place = parseLocation(jd).countries;
     const companyRow = (await this.db.query<{ id: string }>(

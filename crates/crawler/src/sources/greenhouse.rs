@@ -1,6 +1,6 @@
 use crate::adapters::{page_with_jobs, FetchRequest};
 use crate::error::{CrawlerError, Result};
-use crate::extract::{extract_emails, parse_datetime, strip_html};
+use crate::extract::{extract_emails, html_to_blocks, parse_datetime, strip_html};
 use crate::http::HttpClient;
 use crate::model::{AdapterPage, JobRecord, JobSourceKind};
 use serde_json::{json, Value};
@@ -49,7 +49,7 @@ pub fn parse_greenhouse(body: &str) -> Result<AdapterPage> {
                 .and_then(|location| location.get("name"))
                 .and_then(Value::as_str)
                 .map(str::to_owned),
-            description: strip_html(content),
+            description: html_to_blocks(content),
             posted_at: job
                 .get("first_published")
                 .or_else(|| job.get("updated_at"))

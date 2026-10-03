@@ -14,7 +14,39 @@ async function json(res: Response, name: string) {
   return res.json() as Promise<Record<string, any>>;
 }
 
-export async function resolveProvider(credentials: CredentialStore): Promise<Provider | null> {
+/** Free default: Yahoo results rendered by the local Lightpanda browser (measured to respect quoted
+ *  phrases, unlike anonymous HTML fetches of Bing or DuckDuckGo). Paced slowly by the caller. */
+export function yahooHeadless(lightpandaPath: string): Provider {
+  return {
+    name: "yahoo_headless",
+    async search(q) {
+      const url = `https://search.yahoo.com/search?p=${encodeURIComponent(q)}&n=20`;
+      const proc = Bun.spawn([lightpandaPath, "fetch", "--dump", "markdown", url], {
+        env: { ...process.env, LIGHTPANDA_DISABLE_TELEMETRY: "true" }, stdout: "pipe", stderr: "ignore",
+      });
+      const timer = setTimeout(() => proc.kill(), 30_000);
+      const md = await new Response(proc.stdout).text().catch(() => "");
+      clearTimeout(timer);
+      if (/unusual traffic|captcha|are you a robot/i.test(md) || md.length < 500) throw new Error("yahoo blocked or empty");
+      const hits: SearchHit[] = [];
+      const seen = new Set<string>();
+      for (const m of md.matchAll(/\[([^\]]{3,200})\]\((https?:\/\/[^)\s]+)\)/g)) {
+        let link = m[2]!;
+        const ru = link.match(/\/RU=([^/]+)\//);
+        if (ru) link = decodeURIComponent(ru[1]!);
+        if (/yahoo\.|yimg\.|bing\.com|doubleclick|\/search\?/.test(link) || seen.has(link)) continue;
+        seen.add(link);
+        // the text right after the link is Yahoo's snippet for it
+        const after = md.slice(m.index! + m[0].length, m.index! + m[0].length + 400).replace(/\[[^\]]*\]\([^)]*\)/g, " ");
+        const tidy = (v: string) => v.replace(/\\([+\-!().#*_[\]])/g, "$1").replace(/[*_`#]/g, "").replace(/\s+/g, " ").trim();
+        hits.push({ url: link, title: tidy(m[1]!), snippet: tidy(after) });
+      }
+      return hits.slice(0, 15);
+    },
+  };
+}
+
+export async function resolveProvider(credentials: CredentialStore, lightpandaPath?: string): Promise<Provider | null> {
   const brave = await credentials.get("BRAVE_SEARCH_KEY");
   if (brave) {
     return {
@@ -54,7 +86,7 @@ export async function resolveProvider(credentials: CredentialStore): Promise<Pro
       },
     };
   }
-  return null;
+  return lightpandaPath ? yahooHeadless(lightpandaPath) : null;
 }
 
 // Query plan: role x place x application phrase, plus public LinkedIn posts and startup-flavoured
