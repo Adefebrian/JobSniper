@@ -1,7 +1,16 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "The window only shows the local dashboard; no IPC commands are exposed.",
-  "windows": ["main"],
-  "permissions": []
+  "description": "The local dashboard may only drag the window (Overlay title bar); no other IPC.",
+  "windows": [
+    "main"
+  ],
+  "remote": {
+    "urls": [
+      "http://127.0.0.1:4870/*"
+    ]
+  },
+  "permissions": [
+    "core:window:allow-start-dragging"
+  ]
 }
