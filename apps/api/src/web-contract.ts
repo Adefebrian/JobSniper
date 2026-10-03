@@ -3,6 +3,10 @@
 import type { Hono } from "hono";
 import { ApiError, ok, requireObject } from "./core/http";
 import type { Queryable } from "./core/ports/database";
+import type { LlmUsage, LunaPort, TailoredCv } from "./core/ports/ai";
+import { mkdir, writeFile, rm } from "node:fs/promises";
+import { homedir, tmpdir } from "node:os";
+import { join } from "node:path";
 
 type Services = {
   database: Queryable;
@@ -13,7 +17,46 @@ type Services = {
   outreach(): Promise<unknown[]>;
   settings(): Promise<unknown>;
   blacklist(jobId: string): Promise<void>;
+  luna: LunaPort;
+  recordUsage(usage: LlmUsage): Promise<void>;
+  parseProfile(cvText: string): Promise<unknown>;
+  budgetLeft(): Promise<boolean>;
 };
+
+const CV_DIR = join(homedir(), "Documents", "JobSniper", "CVs");
+
+/** CV file -> plain text with macOS tools only (textutil for docx/doc/rtf/html, Spotlight text for pdf). */
+async function cvText(path: string): Promise<string> {
+  const full = path.replace(/^~(?=\/)/, homedir());
+  if (/\.txt$/i.test(full)) return Bun.file(full).text();
+  if (/\.pdf$/i.test(full)) {
+    const out = Bun.spawnSync(["mdls", "-raw", "-name", "kMDItemTextContent", full]).stdout.toString();
+    if (out.trim().length < 100 || out.trim() === "(null)") throw new ApiError(422, "cv_unreadable", "This PDF has no extractable text. Use the .docx version.");
+    return out;
+  }
+  const proc = Bun.spawnSync(["textutil", "-convert", "txt", "-stdout", full]);
+  if (proc.exitCode !== 0) throw new ApiError(422, "cv_unreadable", `Could not read ${path}.`);
+  return proc.stdout.toString();
+}
+
+const esc = (v: string) => v.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!);
+
+function cvHtml(cv: TailoredCv): string {
+  const list = (items: string[]) => `<ul>${items.map((i) => `<li>${esc(i)}</li>`).join("")}</ul>`;
+  return `<!doctype html><html><head><meta charset="utf-8"><style>
+    body{font-family:Helvetica,Arial,sans-serif;font-size:10.5pt;color:#111418;line-height:1.35}
+    h1{font-size:18pt;margin:0}h2{font-size:11pt;margin:14pt 0 4pt;text-transform:none;border-bottom:0}
+    p{margin:2pt 0}ul{margin:2pt 0 6pt 16pt;padding:0}.muted{color:#5b6370}</style></head><body>
+    <h1>${esc(cv.name)}</h1><p><b>${esc(cv.headline)}</b></p><p class="muted">${cv.contact.map(esc).join(" | ")}</p>
+    <h2>Summary</h2><p>${esc(cv.summary)}</p>
+    <h2>Skills</h2><p>${cv.skills.map(esc).join(", ")}</p>
+    <h2>Experience</h2>${cv.experience.map((e) => `<p><b>${esc(e.role)}</b>, ${esc(e.company)} <span class="muted">${esc(e.period)}</span></p>${list(e.bullets)}`).join("")}
+    ${cv.projects.length ? `<h2>Projects</h2>${cv.projects.map((p) => `<p><b>${esc(p.name)}</b></p>${list(p.bullets)}`).join("")}` : ""}
+    ${cv.education.length ? `<h2>Education</h2>${list(cv.education)}` : ""}
+  </body></html>`;
+}
+
+const slugPart = (v: string) => v.replace(/[^A-Za-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40);
 
 const REMOTE: Record<string, string> = {
   remote_global: "global", remote_apac: "apac", remote_restricted: "restricted", onsite: "onsite", unknown: "unknown",
@@ -60,7 +103,10 @@ function targetView(j: Row, contacts: Row[], decisions: Row[] = [], fullText = f
     scoreBreakdown: {
       roleFit: b.roleFit ?? 0, seniority: b.seniorityWeight ?? 0, modeVisa: b.modeVisaWeight ?? 0,
       freshness: b.freshnessWeight ?? 0, skillOverlapCv: b.skillOverlap ?? 0,
+      agenticFocus: j.agentic_focus ?? b.agenticFocus ?? null, preferenceFit: j.preference_fit ?? b.preferenceFit ?? null,
     },
+    feedback: (j.feedback as string | null) ?? null,
+    tailoredCv: j.tailored_cv ?? null,
     aiEvidence: ((j.ai_evidence as Array<{ quote: string; reason?: string; source?: string }>) ?? [])
       .map((e) => ({ quote: noEmoji(e.quote), context: e.source === "title" ? "Job title" : e.reason ?? "Job description" })),
     languageEvidence: ((j.language_evidence as Array<{ quote: string }>) ?? []).map((e) => ({ quote: noEmoji(e.quote) })),
@@ -93,7 +139,9 @@ function lastRun(value: unknown): string {
 export function mountWebContract(app: Hono, s: Services): void {
   app.get("/api/dashboard", async () => {
     const jobs = (await s.database.query<Row>(
-      `SELECT j.*, c.name AS company_name FROM jobs j JOIN companies c ON c.id = j.company_id
+      `SELECT j.*, c.name AS company_name,
+              (SELECT verdict FROM job_feedback f WHERE f.job_id = j.id) AS feedback
+       FROM jobs j JOIN companies c ON c.id = j.company_id
        WHERE j.status IN ('targeted', 'drafted', 'sent', 'replied') AND j.closed_at IS NULL
        ORDER BY j.score DESC NULLS LAST, coalesce(j.posted_at, j.first_seen_at) DESC
        LIMIT 600`,
@@ -120,7 +168,11 @@ export function mountWebContract(app: Hono, s: Services): void {
 
   const detail = async (id: string) => {
     const row = (await s.database.query<Row>(
-      "SELECT j.*, c.name AS company_name FROM jobs j JOIN companies c ON c.id = j.company_id WHERE j.id = $1",
+      `SELECT j.*, c.name AS company_name,
+              (SELECT verdict FROM job_feedback f WHERE f.job_id = j.id) AS feedback,
+              (SELECT jsonb_build_object('fileName', t.file_name, 'createdAt', t.created_at, 'content', t.content)
+                 FROM tailored_cvs t WHERE t.job_id = j.id) AS tailored_cv
+       FROM jobs j JOIN companies c ON c.id = j.company_id WHERE j.id = $1`,
       [id],
     )).rows[0];
     if (!row) throw new ApiError(404, "job_not_found", "Job was not found.");
@@ -131,6 +183,98 @@ export function mountWebContract(app: Hono, s: Services): void {
     )).rows;
     return targetView(row, contacts.get(id) ?? [], decisions, true);
   };
+
+  // Like / dislike: examples Jev and the local model learn Brian's taste from; re-scores the top targets.
+  app.post("/api/targets/:id/feedback", async (context) => {
+    const id = context.req.param("id");
+    const body = requireObject(await context.req.json().catch(() => null));
+    const verdict = String(body.verdict);
+    const note = typeof body.note === "string" ? body.note.trim().slice(0, 500) : null;
+    if (verdict === "clear") {
+      await s.database.query("DELETE FROM job_feedback WHERE job_id = $1", [id]);
+    } else if (verdict === "like" || verdict === "dislike") {
+      await s.database.query(
+        `INSERT INTO job_feedback (job_id, verdict, note) VALUES ($1, $2, $3)
+         ON CONFLICT (job_id) DO UPDATE SET verdict = EXCLUDED.verdict, note = EXCLUDED.note, created_at = now()`,
+        [id, verdict, note],
+      );
+      if (verdict === "dislike") {
+        await s.database.query("UPDATE jobs SET status = 'skipped', skip_reason = 'Disliked by Brian.', updated_at = now() WHERE id = $1", [id]);
+      }
+    } else {
+      throw new ApiError(400, "unknown_feedback", "verdict must be like, dislike, or clear.");
+    }
+    await s.database.query(
+      `UPDATE jobs SET needs_rescore = true, next_judge_at = now()
+       WHERE id IN (SELECT id FROM jobs WHERE status = 'targeted' AND closed_at IS NULL ORDER BY score DESC NULLS LAST LIMIT 300)`,
+    );
+    return ok(await detail(id));
+  });
+
+  // CV import: extract text, keep it as the source of truth for tailoring, parse the profile with luna.
+  app.post("/api/cv/import", async (context) => {
+    const body = requireObject(await context.req.json().catch(() => null));
+    const path = typeof body.path === "string" && body.path.trim() ? body.path.trim() : "~/Documents/CV_Ade_Febrian_AI_Engineer.docx";
+    const text = await cvText(path);
+    if (text.trim().length < 100) throw new ApiError(422, "cv_unreadable", "The CV file has almost no text.");
+    await s.database.query(
+      `INSERT INTO settings (key, value) VALUES ('cv_text', to_jsonb($1::text))
+       ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()`,
+      [text],
+    );
+    return ok(await s.parseProfile(text));
+  });
+
+  // Tailor CV: one luna call, only when Brian presses the button. Saved as .docx and attached to this job's emails.
+  app.post("/api/targets/:id/tailor-cv", async (context) => {
+    const id = context.req.param("id");
+    if (!s.luna.tailorCv) throw new ApiError(501, "tailor_unavailable", "CV tailoring is not available.");
+    const cv = (await s.database.query<{ value: string }>("SELECT value #>> '{}' AS value FROM settings WHERE key = 'cv_text'")).rows[0]?.value;
+    if (!cv) throw new ApiError(409, "cv_missing", "Import your CV in Settings first.");
+    if (!(await s.budgetLeft())) throw new ApiError(429, "llm_budget_cap", "Monthly LLM budget cap reached.");
+    const job = (await s.database.query<Row>(
+      `SELECT j.title, j.location, j.url, coalesce(j.jd_text_english, j.jd_text) AS jd, c.name AS company
+       FROM jobs j JOIN companies c ON c.id = j.company_id WHERE j.id = $1`, [id],
+    )).rows[0];
+    if (!job) throw new ApiError(404, "job_not_found", "Job was not found.");
+    const out = await s.luna.tailorCv({
+      cvText: cv.slice(0, 30_000),
+      job: { title: job.title, company: job.company, location: job.location },
+      jdText: String(job.jd).slice(0, 12_000),
+    });
+    await s.recordUsage(out.usage);
+    await mkdir(CV_DIR, { recursive: true });
+    const fileName = `CV-${slugPart(String(out.result.name || "Ade-Febrian"))}-${slugPart(String(job.company))}-${slugPart(String(job.title))}.docx`;
+    const html = join(tmpdir(), `jobsniper-cv-${id}.html`);
+    await writeFile(html, cvHtml(out.result));
+    const proc = Bun.spawnSync(["textutil", "-convert", "docx", "-output", join(CV_DIR, fileName), html]);
+    await rm(html, { force: true });
+    if (proc.exitCode !== 0) throw new ApiError(500, "cv_write_failed", "Could not write the tailored CV.");
+    await s.database.query(
+      `INSERT INTO tailored_cvs (job_id, content, file_name) VALUES ($1, $2::jsonb, $3)
+       ON CONFLICT (job_id) DO UPDATE SET content = EXCLUDED.content, file_name = EXCLUDED.file_name, created_at = now()`,
+      [id, JSON.stringify(out.result), fileName],
+    );
+    // Any unsent email for this job now carries the tailored CV.
+    await s.database.query(
+      "UPDATE outreach SET cv_variant = $2 WHERE job_id = $1 AND status IN ('draft', 'approved', 'scheduled')",
+      [id, `tailored:${join(CV_DIR, fileName)}`],
+    );
+    return ok(await detail(id));
+  });
+
+  app.get("/api/targets/:id/tailored-cv", async (context) => {
+    const row = (await s.database.query<{ file_name: string }>("SELECT file_name FROM tailored_cvs WHERE job_id = $1", [context.req.param("id")])).rows[0];
+    if (!row) throw new ApiError(404, "tailored_cv_missing", "No tailored CV for this job yet.");
+    const file = Bun.file(join(CV_DIR, row.file_name));
+    if (!(await file.exists())) throw new ApiError(404, "tailored_cv_missing", "The tailored CV file was moved or deleted.");
+    return new Response(file, {
+      headers: {
+        "content-type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "content-disposition": `attachment; filename="${row.file_name}"`,
+      },
+    });
+  });
 
   app.get("/api/targets/:id", async (context) => ok(await detail(context.req.param("id"))));
 
@@ -148,6 +292,11 @@ export function mountWebContract(app: Hono, s: Services): void {
         [id],
       )).rows[0];
       await s.draft(id, contact?.id);
+      await s.database.query(
+        `UPDATE outreach o SET cv_variant = 'tailored:' || $2 || '/' || t.file_name
+         FROM tailored_cvs t WHERE t.job_id = o.job_id AND o.job_id = $1 AND o.status = 'draft'`,
+        [id, CV_DIR],
+      );
       await s.database.query("UPDATE jobs SET status = 'drafted', updated_at = now() WHERE id = $1 AND status = 'targeted'", [id]);
     } else if (action !== "open") {
       throw new ApiError(400, "unknown_action", "Action must be draft, skip, blacklist, or open.");

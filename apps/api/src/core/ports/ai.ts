@@ -36,7 +36,21 @@ export type GroundedDraft = {
   evidence: Evidence[];
 };
 
+export type TailoredCv = {
+  name: string;
+  headline: string;
+  contact: string[];
+  summary: string;
+  skills: string[];
+  experience: Array<{ role: string; company: string; period: string; bullets: string[] }>;
+  projects: Array<{ name: string; bullets: string[] }>;
+  education: string[];
+  changes: string[];
+};
+
 export interface LunaPort {
+  /** Rewrites the CV for one job using only facts already in the CV (on demand, never automatic). */
+  tailorCv?(input: { cvText: string; job: Record<string, unknown>; jdText: string }): Promise<{ result: TailoredCv; usage: LlmUsage }>;
   parseProfile(input: { sourceText: string }): Promise<{ result: ParsedProfile; usage: LlmUsage }>;
   extractJob(input: {
     title: string;

@@ -30,13 +30,40 @@ export class BrainRepository {
     return result.rowCount;
   }
 
+  /** Recent likes and dislikes with what the job was about: Jev's examples and the local model's data. */
+  async feedbackExamples(limitPerSide: number) {
+    const result = await this.database.query<{ verdict: "like" | "dislike"; title: string; company: string; evidence: string; note: string | null }>(
+      `SELECT * FROM (
+         SELECT f.verdict, j.title, c.name AS company,
+                coalesce((SELECT string_agg(e->>'quote', ' | ') FROM jsonb_array_elements(j.ai_evidence) e), '') AS evidence,
+                f.note, f.created_at,
+                row_number() OVER (PARTITION BY f.verdict ORDER BY f.created_at DESC) AS rn
+         FROM job_feedback f JOIN jobs j ON j.id = f.job_id JOIN companies c ON c.id = j.company_id
+       ) x WHERE rn <= $1`,
+      [limitPerSide],
+    );
+    return result.rows.map((r) => ({ verdict: r.verdict, title: r.title, company: r.company, evidence: r.evidence.slice(0, 400), note: r.note }));
+  }
+
+  async feedbackFor(jobId: string): Promise<"like" | "dislike" | null> {
+    const result = await this.database.query<{ verdict: "like" | "dislike" }>("SELECT verdict FROM job_feedback WHERE job_id = $1", [jobId]);
+    return result.rows[0]?.verdict ?? null;
+  }
+
+  async setFocus(id: string, agenticFocus: number, preferenceFit: number | null): Promise<void> {
+    await this.database.query(
+      "UPDATE jobs SET agentic_focus = $2, preference_fit = $3, needs_rescore = false WHERE id = $1",
+      [id, agenticFocus, preferenceFit],
+    );
+  }
+
   /** Jobs to judge now: new, retry-due, or targeted but still waiting for Jev. */
   async judgeQueue(limit: number): Promise<string[]> {
     const result = await this.database.query<{ id: string }>(
       `SELECT id FROM jobs
        WHERE closed_at IS NULL AND next_judge_at <= now()
-         AND (status IN ('new', 'unverified', 'pending_judge') OR (status = 'targeted' AND NOT jev_verified))
-       ORDER BY coalesce(posted_at, first_seen_at) DESC
+         AND (status IN ('new', 'unverified', 'pending_judge') OR (status = 'targeted' AND (NOT jev_verified OR needs_rescore)))
+       ORDER BY needs_rescore DESC, coalesce(posted_at, first_seen_at) DESC
        LIMIT $1`,
       [limit],
     );

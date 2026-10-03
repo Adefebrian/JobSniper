@@ -188,6 +188,16 @@ export function createApiApp(dependencies: ApiDependencies): Hono & ApiRuntime {
     blacklist: async (jobId) => {
       await brainService.patchJob(jobId, { status: "blacklisted" });
     },
+    luna: dependencies.luna,
+    recordUsage: (usage) => usageRecorder.record(usage),
+    parseProfile: (text) => settingsService.parseProfile(text),
+    budgetLeft: async () => {
+      const settings = await readSettings(database);
+      const spent = await database.query<{ total: string }>(
+        "SELECT coalesce(sum(cost_usd), 0)::text AS total FROM llm_usage WHERE date_trunc('month', created_at) = date_trunc('month', now())",
+      );
+      return Number(spent.rows[0]?.total ?? 0) < settings.monthlyLlmCapUsd;
+    },
   });
   dependencies.mount?.(app);
   app.all("/api", () => fail(new ApiError(404, "not_found", "API endpoint was not found.")));

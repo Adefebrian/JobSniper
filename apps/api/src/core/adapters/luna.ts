@@ -80,6 +80,23 @@ Rules, all mandatory:
     );
   }
 
+  async tailorCv(input: { cvText: string; job: Record<string, unknown>; jdText: string }) {
+    return this.complete<import("../ports/ai").TailoredCv>(
+      "cv_tailor",
+      `You tailor a CV to one job. The CV text is the ONLY source of facts: never add a skill, employer, title, date,
+number, project, or achievement that is not in it. You may reorder, select, shorten, and rephrase so the most relevant
+facts for this job and company come first, mirroring the job's own wording only where it is truthful for the candidate.
+English, concise, one page worth. No emoji, no em dash.
+Reply with JSON exactly:
+{"name":string,"headline":string (role-focused, from the CV),"contact":string[] (email, phone, links found in the CV),
+"summary":string (2-3 sentences aimed at this job),"skills":string[] (most relevant first, max 18),
+"experience":[{"role":string,"company":string,"period":string,"bullets":string[] (2-4, most relevant first, keep the numbers)}],
+"projects":[{"name":string,"bullets":string[]}],"education":string[],
+"changes":string[] (3-6 short notes on what you emphasised for this job and why)}`,
+      input,
+    );
+  }
+
   private async complete<T>(
     purpose: string,
     instruction: string,

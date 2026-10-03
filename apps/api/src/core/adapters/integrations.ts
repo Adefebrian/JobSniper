@@ -154,7 +154,7 @@ export class DocumentCvAttachmentProvider implements CvAttachmentProvider {
   ) {}
 
   async load(cvVariant: string): Promise<OutgoingMail["attachments"]> {
-    const fileName = (await this.settings()).cvVariants[cvVariant];
+    const fileName = cvVariant.startsWith("tailored:") ? cvVariant.slice("tailored:".length) : (await this.settings()).cvVariants[cvVariant];
     if (!fileName) return undefined;
     const path = isAbsolute(fileName) ? resolve(fileName) : resolve(this.directory, fileName);
     const relativePath = relative(this.directory, path);

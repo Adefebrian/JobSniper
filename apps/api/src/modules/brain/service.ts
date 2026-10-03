@@ -6,6 +6,7 @@ import type { Clock, IdGenerator, JevPort, LunaPort } from "./ports";
 import { judgeJob, monthlyBudgetAllows, scoreJob, type Judgment } from "./judging";
 import { parseLocation, workModeOf } from "./location";
 import { prefilterJob } from "./prefilter";
+import { localAgenticFocus, preferenceModel, type FeedbackExample } from "./preference";
 import { BrainRepository, type JobRow } from "./repo";
 
 const DECISIONS = ["role_relevance", "language_fit", "remote_scope", "sponsorship", "seniority"] as const;
@@ -39,12 +40,28 @@ export function skillFactor(skills: string[], jdText: string): { factor: number;
   return { factor: 0.5 + 0.5 * Math.min(1, matched.length / 8), matched };
 }
 
+// Brian's focus (beyond plain relevance): AI-assisted / agentic engineering, and his own taste.
+const FOCUS_QUESTIONS = {
+  agentic_focus: {
+    type: "noul" as const,
+    instructions:
+      "The core of this role is building AI agents, LLM-powered product features, or doing AI-assisted / agentic software development (software engineer, fullstack engineer, or AI engineer), not adjacent work such as pure ML research, data engineering, infrastructure, or support.",
+  },
+  preference_fit: {
+    type: "noul" as const,
+    instructions:
+      "Judging from the candidate's liked and disliked example jobs in the state, the candidate would like this job: it resembles the liked examples more than the disliked ones.",
+  },
+};
+
 type Verdicts = {
   roleRelevance: number;
   languageFit: number;
   remoteScope: Judgment["remoteScope"]["value"];
   sponsorship: Judgment["sponsorship"]["value"];
   seniority: Judgment["seniority"]["value"] | "graduate";
+  agenticFocus: number;
+  preferenceFit: number | null;
   verifiedByJev: boolean;
 };
 
@@ -61,6 +78,8 @@ export type JobFilters = {
 
 export class BrainService {
   private nextExpiry = 0;
+  private examples: FeedbackExample[] = [];
+  private preference: (text: string) => number | null = () => null;
 
   constructor(
     private readonly repository: BrainRepository,
@@ -95,6 +114,7 @@ export class BrainService {
       await this.repository.expireStale();
     }
     const ids = await this.repository.judgeQueue(limit);
+    if (ids.length > 0) await this.loadFeedback();
     for (const id of ids) {
       try {
         await this.judgeOne(id);
@@ -105,7 +125,13 @@ export class BrainService {
     return { judged: ids.length };
   }
 
+  private async loadFeedback(): Promise<void> {
+    this.examples = await this.repository.feedbackExamples(8);
+    this.preference = preferenceModel(this.examples);
+  }
+
   async judge(id: string): Promise<Record<string, unknown>> {
+    await this.loadFeedback();
     await this.judgeOne(id);
     return this.getJob(id);
   }
@@ -122,6 +148,13 @@ export class BrainService {
       await this.repository.updateJudgment({
         id, status: "blacklisted", aiEvidence: [], languageEvidence: [], score: 0,
         scoreBreakdown: emptyBreakdown(), skipReason: "Company is blacklisted.", jevVerified: true,
+      });
+      return;
+    }
+    if ((await this.repository.feedbackFor(id)) === "dislike") {
+      await this.repository.updateJudgment({
+        id, status: "skipped", aiEvidence: evidenceArray(row, "ai_evidence"), languageEvidence: [], score: 0,
+        scoreBreakdown: emptyBreakdown(), skipReason: "Disliked by Brian.", jevVerified: true,
       });
       return;
     }
@@ -190,6 +223,11 @@ export class BrainService {
       now: this.clock.now(),
       weights: settings.scoringWeights,
     });
+    // Brian's focus multipliers: agentic / AI-assisted work 0.7..1.0, liked-vs-disliked fit 0.6..1.0.
+    const focusFactor = 0.7 + 0.3 * verdicts.agenticFocus;
+    const preferenceFactor = verdicts.preferenceFit === null ? 1 : 0.6 + 0.4 * verdicts.preferenceFit;
+    const finalScore = Math.round(breakdown.score * focusFactor * preferenceFactor * 10) / 10;
+    await this.repository.setFocus(id, verdicts.agenticFocus, verdicts.preferenceFit);
     await this.repository.updateClassification(id, {
       remoteScope: verdicts.remoteScope,
       sponsorship: verdicts.sponsorship,
@@ -201,8 +239,11 @@ export class BrainService {
       status: reject ? "skipped" : "targeted",
       aiEvidence: prefilter.evidence,
       languageEvidence: prefilter.languageEvidence,
-      score: reject ? 0 : breakdown.score,
-      scoreBreakdown: { ...breakdown, skillsMatched: skill.matched, jevVerified: verdicts.verifiedByJev } as never,
+      score: reject ? 0 : finalScore,
+      scoreBreakdown: {
+        ...breakdown, score: finalScore, agenticFocus: verdicts.agenticFocus, focusFactor,
+        preferenceFit: verdicts.preferenceFit, preferenceFactor, skillsMatched: skill.matched, jevVerified: verdicts.verifiedByJev,
+      } as never,
       skipReason: reject,
       jevVerified: verdicts.verifiedByJev,
     });
@@ -226,11 +267,28 @@ export class BrainService {
     const state = {
       job: { title, company, location, ai_evidence: prefilter.evidence.map((e) => e.quote),
              language_mentions: prefilter.languageEvidence.map((e) => e.quote), description: jdText.slice(0, 14_000) },
-      candidate: { location: "Indonesia (GMT+7)", citizenship: "Indonesian", works_in: "English only" },
+      candidate: {
+        location: "Indonesia (GMT+7)", citizenship: "Indonesian", works_in: "English only",
+        target_level: "mid-level first (about 3-5 years), then 1-3 years, then senior, lead last",
+        target_work: "AI-assisted or agentic software engineering: software engineer, fullstack engineer, or AI engineer",
+      },
+      ...(this.examples.length > 0 ? {
+        liked_examples: this.examples.filter((e) => e.verdict === "like").map(({ title, company, evidence, note }) => ({ title, company, evidence, note })),
+        disliked_examples: this.examples.filter((e) => e.verdict === "dislike").map(({ title, company, evidence, note }) => ({ title, company, evidence, note })),
+      } : {}),
     };
+    const localPreference = this.preference(`${title} ${prefilter.evidence.map((e) => e.quote).join(" ")}`);
     try {
       if (!this.jev.ask) throw new Error("Jev ask unavailable");
-      const answers = await this.jev.ask(state, JUDGE_QUESTIONS);
+      const questions = {
+        ...JUDGE_QUESTIONS,
+        agentic_focus: FOCUS_QUESTIONS.agentic_focus,
+        ...(this.examples.length > 0 ? { preference_fit: FOCUS_QUESTIONS.preference_fit } : {}),
+      };
+      const answers = await this.jev.ask(state, questions);
+      const agentic = toVerdict(FOCUS_QUESTIONS.agentic_focus, answers.agentic_focus);
+      const preference = this.examples.length > 0 ? toVerdict(FOCUS_QUESTIONS.preference_fit, answers.preference_fit) : null;
+      const jevPreference = preference ? Number(preference.verdict.probability) : null;
       const out = {} as Record<DecisionKey, { verdict: { value: unknown; probability?: number }; confidence: number }>;
       for (const key of DECISIONS) out[key] = toVerdict(JEV_QUESTIONS[key], answers[key]) as never;
       for (const key of DECISIONS) {
@@ -243,6 +301,9 @@ export class BrainService {
         remoteScope: String(out.remote_scope.verdict.value) as Verdicts["remoteScope"],
         sponsorship: String(out.sponsorship.verdict.value) as Verdicts["sponsorship"],
         seniority: String(out.seniority.verdict.value) as Verdicts["seniority"],
+        agenticFocus: Number(agentic.verdict.probability),
+        // Jev's reading of the examples, blended with the word-level model learned from them.
+        preferenceFit: jevPreference === null ? null : localPreference === null ? jevPreference : 0.7 * jevPreference + 0.3 * localPreference,
         verifiedByJev: true,
       };
     } catch {
@@ -252,6 +313,8 @@ export class BrainService {
         remoteScope: local.remoteScope.value,
         sponsorship: local.sponsorship.value,
         seniority: local.seniority.value,
+        agenticFocus: localAgenticFocus(title, jdText),
+        preferenceFit: localPreference,
         verifiedByJev: false,
       };
     }
