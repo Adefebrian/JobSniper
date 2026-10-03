@@ -6,7 +6,10 @@ import type { CredentialStore } from "./ports/runtime";
 import type { GmailAuth } from "./adapters/gmail";
 import type { Queryable } from "./ports/database";
 
-const SECRETS = ["OPENAI_API_KEY", "JEV_API_KEY", "GMAIL_CLIENT_ID", "GMAIL_CLIENT_SECRET", "SMTP_PASSWORD"] as const;
+const SECRETS = [
+  "OPENAI_API_KEY", "JEV_API_KEY", "GMAIL_CLIENT_ID", "GMAIL_CLIENT_SECRET", "SMTP_PASSWORD",
+  "BRAVE_SEARCH_KEY", "SERPER_KEY", "GOOGLE_CSE_KEY", "GOOGLE_CSE_CX",
+] as const;
 
 export function mountConnections(app: Hono, credentials: CredentialStore, gmail: GmailAuth, database: Queryable): void {
   app.get("/api/connections", async () => {

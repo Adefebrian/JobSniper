@@ -14,6 +14,9 @@ const DECISIONS = ["role_relevance", "language_fit", "remote_scope", "sponsorshi
 type DecisionKey = (typeof DECISIONS)[number];
 const JUDGE_QUESTIONS = Object.fromEntries(DECISIONS.map((d) => [d, JEV_QUESTIONS[d]]));
 const RETRY_MINUTES = 15;
+// Brian prioritises new companies: early-stage signals written in the listing itself.
+const NEW_COMPANY =
+  /\b(start-?up|early[- ]stage|pre-?seed|seed[- ](stage|round|funded)|series a\b|founding (engineer|team|member)|stealth|founded in 20(2[3-6])|(yc|y combinator)\s*\(?[wsfx]2[3-6]|just raised|recently raised|first \d+ (hires|employees)|small team of)\b/i;
 
 function digest(value: unknown): string {
   return createHash("sha256").update(JSON.stringify(value)).digest("hex");
@@ -230,9 +233,12 @@ export class BrainService {
       ?? (englishText === jdText ? null : detectApplyEmail(jdText, null));
     await this.repository.setApply(id, apply);
     const applyFactor = apply ? 1.3 : 1;
+    const newSignal = englishText.split(/(?<=[.!?])\s+|\n+/).find((s) => NEW_COMPANY.test(s)) ?? null;
+    await this.repository.setNewCompany(id, newSignal ? newSignal.slice(0, 300) : null);
+    const newCompanyFactor = newSignal ? 1.2 : 1;
     const focusFactor = 0.7 + 0.3 * verdicts.agenticFocus;
     const preferenceFactor = verdicts.preferenceFit === null ? 1 : 0.6 + 0.4 * verdicts.preferenceFit;
-    const finalScore = Math.min(100, Math.round(breakdown.score * focusFactor * preferenceFactor * applyFactor * 10) / 10);
+    const finalScore = Math.min(100, Math.round(breakdown.score * focusFactor * preferenceFactor * applyFactor * newCompanyFactor * 10) / 10);
     await this.repository.setFocus(id, verdicts.agenticFocus, verdicts.preferenceFit);
     await this.repository.updateClassification(id, {
       remoteScope: verdicts.remoteScope,
@@ -248,7 +254,7 @@ export class BrainService {
       score: reject ? 0 : finalScore,
       scoreBreakdown: {
         ...breakdown, score: finalScore, agenticFocus: verdicts.agenticFocus, focusFactor,
-        preferenceFit: verdicts.preferenceFit, preferenceFactor, applyByEmail: Boolean(apply), applyFactor, skillsMatched: skill.matched, jevVerified: verdicts.verifiedByJev,
+        preferenceFit: verdicts.preferenceFit, preferenceFactor, applyByEmail: Boolean(apply), applyFactor, newCompany: Boolean(newSignal), newCompanyFactor, skillsMatched: skill.matched, jevVerified: verdicts.verifiedByJev,
       } as never,
       skipReason: reject,
       jevVerified: verdicts.verifiedByJev,

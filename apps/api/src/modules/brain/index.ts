@@ -5,3 +5,5 @@ export { prefilterJob, languagePrefilter, detectJobLanguage } from "./prefilter"
 export { judgeJob, scoreJob, groundedEvidenceValid, monthlyBudgetAllows } from "./judging";
 export type { Judgment, JudgeableJob } from "./judging";
 export type { JobFilters } from "./service";
+export { detectApplyEmail } from "./apply-email";
+export { parseLocation } from "./location";

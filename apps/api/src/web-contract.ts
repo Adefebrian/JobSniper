@@ -121,6 +121,12 @@ function targetView(j: Row, contacts: Row[], decisions: Row[] = [], fullText = f
       agenticFocus: j.agentic_focus ?? b.agenticFocus ?? null, preferenceFit: j.preference_fit ?? b.preferenceFit ?? null,
     },
     feedback: (j.feedback as string | null) ?? null,
+    applyMethod: j.apply_method ?? "unknown",
+    applyEmail: j.apply_email ?? null,
+    applyQuote: j.apply_quote ? noEmoji(String(j.apply_quote)) : null,
+    newCompany: j.new_company === true,
+    newCompanyQuote: j.new_company_quote ? noEmoji(String(j.new_company_quote)) : null,
+    source: String(j.source_name ?? ""),
     tailoredCv: j.tailored_cv ?? null,
     aiEvidence: ((j.ai_evidence as Array<{ quote: string; reason?: string; source?: string }>) ?? [])
       .map((e) => ({ quote: noEmoji(e.quote), context: e.source === "title" ? "Job title" : e.reason ?? "Job description" })),
@@ -154,12 +160,12 @@ function lastRun(value: unknown): string {
 export function mountWebContract(app: Hono, s: Services): void {
   app.get("/api/dashboard", async () => {
     const jobs = (await s.database.query<Row>(
-      `SELECT j.*, c.name AS company_name,
+      `SELECT j.*, c.name AS company_name, s.name AS source_name,
               (SELECT verdict FROM job_feedback f WHERE f.job_id = j.id) AS feedback
-       FROM jobs j JOIN companies c ON c.id = j.company_id
+       FROM jobs j JOIN companies c ON c.id = j.company_id LEFT JOIN sources s ON s.id = j.source_id
        WHERE j.status IN ('targeted', 'drafted', 'sent', 'replied') AND j.closed_at IS NULL
-       ORDER BY j.score DESC NULLS LAST, coalesce(j.posted_at, j.first_seen_at) DESC
-       LIMIT 600`,
+       ORDER BY (j.apply_method = 'email') DESC, j.score DESC NULLS LAST, coalesce(j.posted_at, j.first_seen_at) DESC
+       LIMIT 800`,
     )).rows;
     const contacts = await contactsFor(s.database, jobs.map((j) => String(j.id)));
     const status = await s.dashboardStatus();
@@ -183,7 +189,7 @@ export function mountWebContract(app: Hono, s: Services): void {
 
   const detail = async (id: string) => {
     const row = (await s.database.query<Row>(
-      `SELECT j.*, c.name AS company_name,
+      `SELECT j.*, c.name AS company_name, (SELECT name FROM sources WHERE id = j.source_id) AS source_name,
               (SELECT verdict FROM job_feedback f WHERE f.job_id = j.id) AS feedback,
               (SELECT jsonb_build_object('fileName', t.file_name, 'createdAt', t.created_at, 'content', t.content)
                  FROM tailored_cvs t WHERE t.job_id = j.id) AS tailored_cv
@@ -299,7 +305,12 @@ export function mountWebContract(app: Hono, s: Services): void {
         (SELECT count(DISTINCT email) FROM contacts WHERE invalid_at IS NULL)::int AS emails,
         (SELECT count(*) FROM job_feedback WHERE verdict = 'like')::int AS liked,
         (SELECT count(*) FROM companies WHERE discovered_via <> 'feed_holder')::int AS companies,
-        (SELECT count(*) FROM career_sources WHERE last_ok_at > now() - interval '24 hours')::int AS sources_live`);
+        (SELECT count(*) FROM career_sources WHERE last_ok_at > now() - interval '24 hours')::int AS sources_live,
+        (SELECT count(*) FROM jobs WHERE apply_method = 'email' AND status = 'targeted' AND closed_at IS NULL)::int AS email_targets,
+        (SELECT count(*) FROM jobs WHERE apply_method = 'email' AND status = 'targeted' AND closed_at IS NULL
+           AND first_seen_at > now() - interval '24 hours')::int AS email_targets_24h,
+        (SELECT count(*) FROM jobs WHERE new_company AND status = 'targeted' AND closed_at IS NULL)::int AS new_company_targets,
+        (SELECT count(*) FROM discovered_urls WHERE seen_at > now() - interval '24 hours')::int AS pages_read_24h`);
     const daily = await q(`
       SELECT to_char(d, 'YYYY-MM-DD') AS day,
              (SELECT count(*) FROM jobs j WHERE coalesce(j.posted_at, j.first_seen_at)::date = d::date)::int AS discovered,
@@ -354,10 +365,11 @@ export function mountWebContract(app: Hono, s: Services): void {
       FROM jobs j WHERE ${week}`);
     const best = await q(`
       SELECT j.id, j.title, c.name AS company, j.location, round(j.score)::int AS score, j.remote_scope, j.seniority,
+             j.apply_email, j.new_company,
              coalesce(j.posted_at, j.first_seen_at) AS posted_at
       FROM jobs j JOIN companies c ON c.id = j.company_id
-      WHERE j.status = 'targeted' AND j.closed_at IS NULL AND coalesce(j.posted_at, j.first_seen_at) > now() - interval '72 hours'
-      ORDER BY j.score DESC NULLS LAST LIMIT 3`);
+      WHERE j.status = 'targeted' AND j.closed_at IS NULL AND coalesce(j.posted_at, j.first_seen_at) > now() - interval '14 days'
+      ORDER BY (j.apply_method = 'email') DESC, j.score DESC NULLS LAST LIMIT 3`);
     const goal = Number(profile.weeklyGoal ?? 10) || 10;
     return ok({
       totals, daily, roles, countries, levels, modes, companies, funnel, skills, share, best,

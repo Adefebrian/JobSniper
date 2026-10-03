@@ -71,6 +71,10 @@ export class BrainRepository {
     }
   }
 
+  async setNewCompany(id: string, quote: string | null): Promise<void> {
+    await this.database.query("UPDATE jobs SET new_company = $2, new_company_quote = $3 WHERE id = $1", [id, quote !== null, quote]);
+  }
+
   async setFocus(id: string, agenticFocus: number, preferenceFit: number | null): Promise<void> {
     await this.database.query(
       "UPDATE jobs SET agentic_focus = $2, preference_fit = $3, needs_rescore = false WHERE id = $1",

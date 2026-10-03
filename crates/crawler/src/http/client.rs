@@ -304,6 +304,12 @@ fn status_error(status: StatusCode, response: &FetchResponse) -> Option<CrawlerE
 }
 
 fn is_bot_wall(response: &FetchResponse) -> bool {
+    // Real challenge pages are small HTML documents. A JSON API answer or a full job page that merely
+    // mentions "captcha" (HN comments, a job at an anti-bot company) is not a wall.
+    let content_type = response.content_type.as_deref().unwrap_or_default().to_ascii_lowercase();
+    if content_type.contains("json") || content_type.contains("xml") || response.body.len() > 60_000 {
+        return false;
+    }
     let body = String::from_utf8_lossy(&response.body).to_ascii_lowercase();
     [
         "captcha",

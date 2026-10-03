@@ -14,6 +14,8 @@ import {
 import { SmtpTransport } from "./core/adapters/mail";
 import { GmailAuth, GmailTransport } from "./core/adapters/gmail";
 import { mountConnections } from "./core/connections";
+import { SniperService } from "./modules/sniper";
+import { homedir } from "node:os";
 import { mountSpa } from "./core/adapters/spa";
 import { createApiApp } from "./app";
 
@@ -21,6 +23,11 @@ const config = loadConfig();
 const database = new PostgresDatabase(config.databaseUrl);
 const migrations = await migrateDatabase(database);
 const credentials = new MacKeychainCredentialStore();
+const sniper = new SniperService(
+  database,
+  credentials,
+  process.env.LIGHTPANDA_PATH ?? `${homedir()}/Library/Application Support/JobSniper/bin/lightpanda-bin`,
+);
 const gmailAuth = new GmailAuth(credentials, `http://127.0.0.1:${config.port}/api/gmail/callback`);
 const mail = config.mailProvider === "smtp"
   ? new SmtpTransport(
@@ -38,7 +45,10 @@ const app = createApiApp({
   clock: new SystemClock(),
   ids: new CryptoIdGenerator(),
   mail,
-  mount: (routes) => mountConnections(routes, credentials, gmailAuth, database),
+  mount: (routes) => {
+    mountConnections(routes, credentials, gmailAuth, database);
+    routes.get("/api/sniper", () => Response.json({ ok: true, data: sniper.status() }));
+  },
 });
 
 mountSpa(app, process.env.JOBSNIPER_WEB_DIST ?? resolve(import.meta.dir, "../../web/dist"));
@@ -54,6 +64,8 @@ const maintenance = new RuntimeMaintenance({
       const { judged } = await app.brain.processQueue(25);
       if (judged === 0) break;
     }
+    // Web sniper: one search query when the provider's free-tier pacing allows.
+    await sniper.tick().catch((error: Error) => console.error(`web sniper: ${error.message}`));
     // One public-email search per company every 45 s for targets that have no email (PRD 8.1).
     if (Date.now() >= nextSearchAt) {
       nextSearchAt = Date.now() + 45_000;
