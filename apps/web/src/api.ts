@@ -1,4 +1,4 @@
-import type { ApiEnvelope, DashboardData, JobAction, JobTarget, Outreach, OutboxAction, Profile, Source, TargetsQuery } from "./types.ts";
+import type { ApiEnvelope, ConnectionName, Connections, DashboardData, JobAction, JobTarget, Outreach, OutboxAction, Profile, Source, TargetsQuery } from "./types.ts";
 
 const API_BASE = "/api";
 
@@ -67,6 +67,17 @@ export const getSettings = () => request<Profile>("/settings");
 export const saveSettings = (settings: Profile) => request<Profile>("/settings", {
   method: "PUT",
   body: JSON.stringify(settings),
+});
+export const getConnections = () => request<Connections>("/connections");
+export const saveConnection = (name: ConnectionName, value: string) => request<{ name: string; set: boolean }>(`/connections/${encodeURIComponent(name)}`, {
+  method: "PUT",
+  body: JSON.stringify({ value }),
+});
+export const GMAIL_CONNECT_URL = `${API_BASE}/gmail/connect`;
+export const disconnectGmail = () => request<{ connected: boolean }>("/gmail/disconnect", { method: "POST" });
+export const importProfileFile = (path: string) => request<unknown>("/profile/import-file", {
+  method: "POST",
+  body: JSON.stringify({ path }),
 });
 export const exportData = async (kind: "targets" | "outreach", format: "csv" | "xlsx") => {
   const response = await fetch(`${API_BASE}/export?kind=${kind}&format=${format}`, { credentials: "same-origin" });

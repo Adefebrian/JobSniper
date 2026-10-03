@@ -50,6 +50,11 @@ const serveSpa = async (request: Request) => {
     dashboardRequests += 1;
     return Response.json({ ok: true, data: sampleData });
   }
+  const targetMatch = url.pathname.match(/^\/api\/targets\/([^/]+)$/);
+  if (targetMatch) {
+    const target = sampleData.targets.find((job) => job.id === decodeURIComponent(targetMatch[1] ?? ""));
+    return target ? Response.json({ ok: true, data: target }) : Response.json({ ok: false, error: { code: "NOT_FOUND", message: "Not found" } }, { status: 404 });
+  }
 
   const pathname = decodeURIComponent(url.pathname);
   const relativePath = pathname === "/" ? "index.html" : pathname.replace(/^\/+/, "");
@@ -101,7 +106,7 @@ afterAll(async () => {
 });
 
 describe("JobSniper final browser smoke", () => {
-  test.skipIf(!chromePath)("shell, Targets navigation, detail drawer, and responsive width", async () => {
+  test.skipIf(!chromePath)("shell, Targets navigation, detail panel, and responsive width", async () => {
     if (!browser) throw new Error("Browser was not initialized");
 
     for (const width of [375, 1280]) {
@@ -128,9 +133,9 @@ describe("JobSniper final browser smoke", () => {
         });
         expect(targetsNavigation).toBe(true);
 
-        const navSelector = width < 960
-          ? '.mobile-nav a[href="#/targets"]'
-          : '.side-nav a[href="#/targets"]';
+        const navSelector = width < 640
+          ? '.tab-bar a[href="#/targets"]'
+          : '.top-nav a[href="#/targets"]';
         await page.click(navSelector);
         await page.waitForFunction(() => {
           return [...document.querySelectorAll("h1")].some((heading) => heading.textContent?.trim() === "Targets");
@@ -145,10 +150,10 @@ describe("JobSniper final browser smoke", () => {
         expect(pageOverflow.body).toBeLessThanOrEqual(pageOverflow.viewport);
         expect(pageOverflow.document).toBeLessThanOrEqual(pageOverflow.viewport);
 
-        await page.click("tr.ledger-row .table-action");
-        await page.waitForSelector('.drawer-layer[role="dialog"]');
-        await page.waitForFunction(() => Boolean(document.querySelector(".detail-drawer h2")?.textContent?.trim()));
-        expect(await page.$eval(".detail-drawer h2", (heading) => heading.textContent?.trim())).toBeTruthy();
+        await page.click("a.target-row");
+        await page.waitForFunction(() => Boolean(document.querySelector(".targets-detail h2")?.textContent?.trim()));
+        expect(await page.$eval(".targets-detail h2", (heading) => heading.textContent?.trim())).toBeTruthy();
+        expect(await page.evaluate(() => window.location.hash.startsWith("#/targets/"))).toBe(true);
 
         const drawerOverflow = await page.evaluate(() => ({
           body: document.body.scrollWidth,

@@ -26,9 +26,21 @@ describe("JobSniper shell primitives", () => {
     const root = createRoot(host as unknown as Element);
     root.render(<StatusStrip status={sampleData.status} />);
     await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(host.textContent).toContain("T1 last run");
-    expect(host.textContent).toContain("Blocked sources");
+    expect(host.textContent).toContain("T1 run");
+    expect(host.textContent).toContain("Blocked");
+    expect(host.textContent).not.toContain("NaN");
     expect(host.querySelectorAll("button, a")).toHaveLength(0);
+    root.unmount();
+  });
+
+  test("shows never for an empty last run", async () => {
+    const host = window.document.createElement("div");
+    window.document.body.appendChild(host);
+    const root = createRoot(host as unknown as Element);
+    root.render(<StatusStrip status={{ ...sampleData.status, lastRunT3: "" }} />);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(host.textContent).toContain("never");
+    expect(host.textContent).not.toContain("NaN");
     root.unmount();
   });
 });

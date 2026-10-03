@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import * as api from "./api.ts";
 import { AppShell } from "./components/AppShell.tsx";
-import { ErrorState, LoadingState, Notice } from "./components/States.tsx";
+import { LoadingState, Notice } from "./components/States.tsx";
 import { CompaniesSourcesScreen } from "./screens/CompaniesSourcesScreen.tsx";
 import { OutreachScreen } from "./screens/OutreachScreen.tsx";
 import { SettingsScreen } from "./screens/SettingsScreen.tsx";
@@ -18,38 +18,40 @@ const EMPTY: DashboardData = {
   status: { lastRunT1: "", lastRunT2: "", lastRunT3: "", queueDepth: 0, llmSpendUsd: 0, blockedSources: 0 },
 };
 
-const getRoute = (): AppRoute => {
+const ROUTES: AppRoute[] = ["targets", "outreach", "companies", "settings"];
+
+/** Reads "#/targets/<id>", "#targets", or "?route=settings". */
+const readLocation = (): { route: AppRoute; id: string | null } => {
   const queryRoute = new URLSearchParams(window.location.search).get("route") ?? "";
-  const route = queryRoute || (window.location.hash.replace("#/", "").split("/")[0] ?? "");
-  return ["targets", "outreach", "companies", "settings"].includes(route) ? route as AppRoute : "targets";
+  const parts = window.location.hash.replace(/^#\/?/, "").split("/");
+  const route = (queryRoute || parts[0] || "") as AppRoute;
+  if (!ROUTES.includes(route)) return { route: "targets", id: null };
+  return { route, id: route === "targets" && parts[1] ? decodeURIComponent(parts[1]) : null };
 };
 
+const message = (caught: unknown, fallback: string) => caught instanceof Error ? caught.message : fallback;
+
 export function App() {
-  const [route, setRoute] = useState(getRoute);
+  const [location, setLocation] = useState(readLocation);
   const [data, setData] = useState<DashboardData>(EMPTY);
-  const [loading, setLoading] = useState(true);
+  const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [usingSnapshot, setUsingSnapshot] = useState(false);
 
   const loadData = useCallback(async () => {
-    setLoading(true);
     try {
-      const fresh = await api.getDashboard();
-      setData(fresh);
+      setData(await api.getDashboard());
       setError(null);
-      setUsingSnapshot(false);
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "The local API is unavailable.");
-      setUsingSnapshot(true);
+      setError(message(caught, "The local API is unavailable."));
     } finally {
-      setLoading(false);
+      setLoaded(true);
     }
   }, []);
 
   useEffect(() => {
     loadData();
     const refresh = window.setInterval(loadData, 60_000);
-    const handleHash = () => setRoute(getRoute());
+    const handleHash = () => setLocation(readLocation());
     window.addEventListener("hashchange", handleHash);
     return () => {
       window.clearInterval(refresh);
@@ -57,97 +59,84 @@ export function App() {
     };
   }, [loadData]);
 
-  const onJobAction = async (job: JobTarget, action: JobAction) => {
+  const run = async (task: () => Promise<void>, fallback: string) => {
     try {
-      const updated = await api.actOnTarget(job.id, action);
-      setData((current) => ({ ...current, targets: current.targets.map((item) => item.id === updated.id ? updated : item) }));
+      await task();
       setError(null);
       return true;
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Target action failed.");
+      setError(message(caught, fallback));
       return false;
     }
   };
-  const onOutreachAction = async (item: Outreach, action: OutboxAction) => {
-    try {
-      const updated = await api.updateOutreach(item.id, action);
-      setData((current) => ({ ...current, outreach: current.outreach.map((entry) => entry.id === updated.id ? updated : entry) }));
-      setError(null);
-      return true;
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Outreach action failed.");
-      return false;
-    }
+
+  const onJobAction = (job: JobTarget, action: JobAction) => run(async () => {
+    const updated = await api.actOnTarget(job.id, action);
+    setData((current) => ({
+      ...current,
+      targets: action === "blacklist"
+        ? current.targets.filter((item) => item.companyId !== job.companyId)
+        : current.targets.map((item) => item.id === job.id ? { ...item, ...updated, contacts: updated.contacts ?? item.contacts } : item),
+    }));
+    if (action === "draft") void loadData();
+  }, "Target action failed.");
+
+  const onOutreachAction = (item: Outreach, action: OutboxAction) => run(async () => {
+    const updated = await api.updateOutreach(item.id, action);
+    setData((current) => ({ ...current, outreach: current.outreach.map((entry) => entry.id === updated.id ? updated : entry) }));
+  }, "Outreach action failed.");
+
+  const onCompanyAction = (company: { id: string }, action: "force_crawl" | "pause" | "resume") => run(async () => {
+    await api.actOnCompany(company.id, action);
+  }, "Company action failed.");
+
+  const onSourceAction = (source: Source, action: "approve" | "reject" | "pause" | "resume") => run(async () => {
+    const updated = await api.actOnSource(source.id, action);
+    setData((current) => ({ ...current, sources: current.sources.map((entry) => entry.id === updated.id ? { ...entry, ...updated } : entry) }));
+  }, "Source action failed.");
+
+  const onAddCompany = (domain: string) => run(async () => {
+    await api.addCompanyDomain(domain);
+    await loadData();
+  }, "Company add failed.");
+
+  const onAddSource = (input: { name: string; url: string; method: string }) => run(async () => {
+    await api.addSource(input);
+    await loadData();
+  }, "Source add failed.");
+
+  const onSaveSettings = (settings: Profile) => run(async () => {
+    const saved = await api.saveSettings(settings);
+    setData((current) => ({ ...current, settings: saved }));
+  }, "Settings save failed.");
+
+  const onReloadSettings = async () => {
+    const fresh = await api.getSettings();
+    setData((current) => ({ ...current, settings: fresh }));
+    return fresh;
   };
-  const onCompanyAction = async (company: { id: string }, action: "force_crawl" | "pause" | "resume") => {
-    try {
-      await api.actOnCompany(company.id, action);
-      setError(null);
-      return true;
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Company action failed.");
-      return false;
-    }
-  };
-  const onSourceAction = async (source: Source, action: "approve" | "reject" | "pause" | "resume") => {
-    try {
-      const updated = await api.actOnSource(source.id, action);
-      setData((current) => ({ ...current, sources: current.sources.map((entry) => entry.id === updated.id ? updated : entry) }));
-      setError(null);
-      return true;
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Source action failed.");
-      return false;
-    }
-  };
-  const onAddCompany = async (domain: string) => {
-    try {
-      await api.addCompanyDomain(domain);
-      await loadData();
-      return true;
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Company add failed.");
-      return false;
-    }
-  };
-  const onAddSource = async (input: { name: string; url: string; method: string }) => {
-    try {
-      await api.addSource(input);
-      await loadData();
-      return true;
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Source add failed.");
-      return false;
-    }
-  };
-  const onSaveSettings = async (settings: Profile) => {
-    try {
-      const saved = await api.saveSettings(settings);
-      setData((current) => ({ ...current, settings: saved }));
-      setError(null);
-      return true;
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Settings save failed.");
-      return false;
-    }
-  };
+
   const onExport = async (kind: "targets" | "outreach", format: "csv" | "xlsx") => {
-    try {
+    await run(async () => {
       const blob = await api.exportData(kind, format);
       downloadBlob(blob, `jobsniper-${kind}-${new Date().toISOString().slice(0, 10)}.${format}`);
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Export failed.");
-    }
+    }, "Export failed.");
   };
 
-  const status = data.status;
-  const screen = useMemo(() => {
-    if (loading && !usingSnapshot) return <LoadingState />;
-    if (route === "targets") return <TargetsScreen targets={data.targets} loading={loading} error={usingSnapshot ? error : null} onAction={onJobAction} onExport={(format) => onExport("targets", format)} />;
-    if (route === "outreach") return <OutreachScreen outreach={data.outreach} loading={loading} error={usingSnapshot ? error : null} onAction={onOutreachAction} onExport={(format) => onExport("outreach", format)} />;
-    if (route === "companies") return <CompaniesSourcesScreen companies={data.companies} sources={data.sources} loading={loading} error={usingSnapshot ? error : null} onCompanyAction={onCompanyAction} onSourceAction={onSourceAction} onAddCompany={onAddCompany} onAddSource={onAddSource} />;
-    return <SettingsScreen settings={data.settings} loading={loading} error={usingSnapshot ? error : null} onSave={onSaveSettings} />;
-  }, [data, error, loading, route, usingSnapshot]);
+  const { route, id } = location;
+  let screen;
+  if (!loaded) screen = <LoadingState />;
+  else if (route === "targets") screen = <TargetsScreen targets={data.targets} selectedId={id} onAction={onJobAction} onExport={(format) => onExport("targets", format)} />;
+  else if (route === "outreach") screen = <OutreachScreen outreach={data.outreach} dailyCap={data.settings.dailyCap} onAction={onOutreachAction} onExport={(format) => onExport("outreach", format)} />;
+  else if (route === "companies") screen = <CompaniesSourcesScreen companies={data.companies} sources={data.sources} onCompanyAction={onCompanyAction} onSourceAction={onSourceAction} onAddCompany={onAddCompany} onAddSource={onAddSource} />;
+  else screen = <SettingsScreen settings={data.settings} onSave={onSaveSettings} onReloadSettings={onReloadSettings} />;
 
-  return <AppShell route={route} status={status}>{error && !usingSnapshot ? <Notice tone="warning">{error}</Notice> : null}{screen}</AppShell>;
+  return (
+    <AppShell route={route} status={data.status}>
+      <div className={route === "targets" ? "page page-split" : "page"}>
+        {error ? <Notice tone="warning" title="API problem">{error}</Notice> : null}
+        {screen}
+      </div>
+    </AppShell>
+  );
 }

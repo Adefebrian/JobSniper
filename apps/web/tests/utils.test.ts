@@ -19,6 +19,8 @@ describe("target utilities", () => {
     expect(formatAge("2026-10-03T11:30:00Z", now)).toBe("30m");
     expect(formatAge("2026-10-02T09:00:00Z", now)).toBe("1d");
     expect(formatAge("2026-09-25T12:00:00Z", now)).toBe("8d");
+    expect(formatAge("", now)).toBe("never");
+    expect(formatAge("2026-10-03 18:45:00.000000+07", now)).toBe("15m");
   });
 
   test("uses transparent score labels", () => {

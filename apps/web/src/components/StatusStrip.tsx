@@ -1,33 +1,25 @@
-import { formatAge } from "../utils.ts";
-import type { StatusStrip } from "../types.ts";
+import { formatAgo } from "../utils.ts";
+import type { StatusStrip as StatusData } from "../types.ts";
 
-export function StatusStrip({ status }: { status: StatusStrip }) {
+export function StatusStrip({ status }: { status: StatusData }) {
+  const items = [
+    { label: "T1 run", value: formatAgo(status.lastRunT1) },
+    { label: "T2 run", value: formatAgo(status.lastRunT2) },
+    { label: "T3 run", value: formatAgo(status.lastRunT3) },
+    { label: "Queue", value: String(status.queueDepth) },
+    { label: "LLM spend", value: `$${(status.llmSpendUsd ?? 0).toFixed(2)}` },
+    { label: "Blocked", value: String(status.blockedSources), warn: status.blockedSources > 0 },
+  ];
   return (
     <section className="status-strip" aria-label="System status">
-      <div className="status-item">
-        <span className="status-label">T1 last run</span>
-        <strong>{formatAge(status.lastRunT1)} ago</strong>
-      </div>
-      <div className="status-item">
-        <span className="status-label">T2 last run</span>
-        <strong>{formatAge(status.lastRunT2)} ago</strong>
-      </div>
-      <div className="status-item">
-        <span className="status-label">T3 last run</span>
-        <strong>{formatAge(status.lastRunT3)} ago</strong>
-      </div>
-      <div className="status-item">
-        <span className="status-label">Queue</span>
-        <strong>{status.queueDepth} tasks</strong>
-      </div>
-      <div className="status-item">
-        <span className="status-label">LLM spend</span>
-        <strong>${status.llmSpendUsd.toFixed(2)}</strong>
-      </div>
-      <div className="status-item status-warning">
-        <span className="status-label">Blocked sources</span>
-        <strong>{status.blockedSources}</strong>
-      </div>
+      <dl>
+        {items.map((item) => (
+          <div key={item.label} className={item.warn ? "status-item is-warn" : "status-item"}>
+            <dt>{item.label}</dt>
+            <dd>{item.value}</dd>
+          </div>
+        ))}
+      </dl>
     </section>
   );
 }

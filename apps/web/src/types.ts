@@ -3,7 +3,7 @@ export type ApiEnvelope<T> = { ok: true; data: T } | { ok: false; error: { code:
 export type JobStatus = "new" | "judged" | "targeted" | "drafted" | "sent" | "replied" | "closed" | "skipped" | "blacklisted" | "pending_judge" | "unverified";
 export type JobAction = "draft" | "skip" | "blacklist" | "open";
 export type WorkMode = "remote" | "hybrid" | "onsite";
-export type RemoteScope = "global" | "apac" | "restricted";
+export type RemoteScope = "global" | "apac" | "restricted" | "onsite" | "unknown";
 export type Sponsorship = "yes" | "unknown" | "no" | "registry_hit";
 
 export interface Evidence {
@@ -42,6 +42,7 @@ export interface JobTarget {
   externalId: string;
   location: string;
   country: string;
+  countries: string[];
   workMode: WorkMode;
   remoteScope: RemoteScope;
   sponsorship: Sponsorship;
@@ -56,6 +57,10 @@ export interface JobTarget {
   score: number;
   scoreBreakdown: { roleFit: number; seniority: number; modeVisa: number; freshness: number; skillOverlapCv: number };
   aiEvidence: Evidence[];
+  languageEvidence: Evidence[];
+  translated: boolean;
+  jevVerified: boolean;
+  skipReason: string | null;
   jdText: string;
   contacts: Contact[];
   decisions: Decision[];
@@ -81,13 +86,13 @@ export interface Outreach {
 export interface Company {
   id: string;
   name: string;
-  domain: string;
+  domain: string | null;
   country: string;
   tier: "T1" | "T2" | "T3";
   sourceCount: number;
   health: "ok" | "failing" | "blocked";
-  lastRunAt: string;
-  nextDueAt: string;
+  lastRunAt: string | null;
+  nextDueAt: string | null;
 }
 
 export interface Source {
@@ -99,7 +104,7 @@ export interface Source {
   method: "json_api" | "rss" | "sitemap" | "json_ld" | "html_selector" | "headless" | "csv_download" | "custom_adapter";
   trust: "official" | "public_listing" | "derived";
   status: "candidate" | "active" | "paused" | "blocked" | "retired";
-  yieldStats: { relevantPer100: number; duplicateRatio: number; failureRate: number; lastFoundAt: string };
+  yieldStats: { relevantPer100: number; duplicateRatio: number; failureRate: number; lastFoundAt: string | null };
   configUrl: string;
 }
 
@@ -117,6 +122,10 @@ export interface Profile {
   dailyCap: number;
   llmBudgetUsd: number;
 }
+
+export type ConnectionName = "OPENAI_API_KEY" | "JEV_API_KEY" | "GMAIL_CLIENT_ID" | "GMAIL_CLIENT_SECRET" | "SMTP_PASSWORD";
+
+export type Connections = Record<ConnectionName, boolean> & { GMAIL_CONNECTED: boolean };
 
 export interface StatusStrip {
   lastRunT1: string;
