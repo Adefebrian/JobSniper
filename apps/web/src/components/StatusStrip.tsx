@@ -1,5 +1,14 @@
-import { formatAgo } from "../utils.ts";
+import { formatAgo, parseDate } from "../utils.ts";
 import type { StatusStrip as StatusData } from "../types.ts";
+
+/** One quiet line for the sidebar: the most recent crawl of any tier. */
+export function LastCrawl({ status }: { status: StatusData }) {
+  const latest = [status.lastRunT1, status.lastRunT2, status.lastRunT3]
+    .map((value) => parseDate(value))
+    .filter((value): value is Date => value !== null)
+    .sort((a, b) => b.getTime() - a.getTime())[0];
+  return <p className="last-crawl">Last crawl {latest ? formatAgo(latest.toISOString()) : "never"}</p>;
+}
 
 export function StatusStrip({ status, variant = "strip" }: { status: StatusData; variant?: "strip" | "stack" }) {
   const items = [

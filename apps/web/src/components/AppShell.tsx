@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { StatusStrip } from "./StatusStrip.tsx";
+import { LastCrawl, StatusStrip } from "./StatusStrip.tsx";
 import type { StatusStrip as StatusData } from "../types.ts";
 
 export const routes = [
@@ -31,7 +31,7 @@ export function AppShell({ route, status, counts, children }: Props) {
             </a>
           ))}
         </nav>
-        <StatusStrip status={status} variant="stack" />
+        <LastCrawl status={status} />
       </aside>
       <header className="topbar" data-tauri-drag-region>
         <a className="brand" href="#/targets" aria-label="JobSniper home"><strong>JobSniper</strong></a>
