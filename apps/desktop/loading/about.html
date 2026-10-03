@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>About JobSniper</title>
+<style>
+  :root { --bg: #ffffff; --label: #1d1d1f; --label-2: rgba(60,60,67,0.6); --accent: #0066cc; --sep: rgba(60,60,67,0.12); }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #1e1e1e; --label: rgba(255,255,255,0.92); --label-2: rgba(235,235,245,0.6); --accent: #4aa0ff; --sep: rgba(255,255,255,0.1); }
+  }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--label);
+    font: 13px/18px -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif; -webkit-font-smoothing: antialiased;
+    -webkit-user-select: none; user-select: none; cursor: default; }
+  main { height: 100%; box-sizing: border-box; padding: 44px 24px 24px; display: flex; flex-direction: column; align-items: center; text-align: center; }
+  img { width: 80px; height: 80px; }
+  h1 { margin: 12px 0 2px; font-size: 17px; line-height: 22px; font-weight: 600; letter-spacing: -0.01em; }
+  .version { color: var(--label-2); font-size: 12px; font-variant-numeric: tabular-nums; }
+  .by { margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--sep); width: 100%; color: var(--label-2); }
+  .by strong { color: var(--label); font-weight: 600; }
+  nav { margin-top: 8px; display: flex; gap: 16px; justify-content: center; }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+</style>
+</head>
+<body>
+  <main data-tauri-drag-region>
+    <img src="icon.png" alt="">
+    <h1>JobSniper</h1>
+    <div class="version" id="version">Version 0.1.0</div>
+    <div class="by">Developed by <strong>Brian</strong></div>
+    <nav>
+      <a href="https://github.com/Adefebrian/JobSniper">GitHub</a>
+      <a href="https://adefebrian.com">adefebrian.com</a>
+    </nav>
+  </main>
+  <script>
+    if (window.__JOBSNIPER_VERSION__) document.getElementById("version").textContent = "Version " + window.__JOBSNIPER_VERSION__;
+  </script>
+</body>
+</html>

@@ -104,8 +104,8 @@ export function SettingsScreen({ status, settings, onSave, onReloadSettings }: P
           </Group>
           <Group wide title="About" description="JobSniper, version 0.1.0.">
             <div className="about-body">
-              <p>Developed by <strong>Brian</strong> to find his next AI engineering role.</p>
-              <p><a href="https://adefebrian.com" target="_blank" rel="noreferrer">adefebrian.com</a> · <a href="https://github.com/Adefebrian/JobSniper" target="_blank" rel="noreferrer">Source on GitHub</a></p>
+              <p>Developed by <strong>Brian</strong></p>
+              <p><a href="https://github.com/Adefebrian/JobSniper" target="_blank" rel="noreferrer">GitHub</a> · <a href="https://adefebrian.com" target="_blank" rel="noreferrer">adefebrian.com</a></p>
             </div>
           </Group>
       </div>

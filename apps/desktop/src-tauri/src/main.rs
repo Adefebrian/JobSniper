@@ -13,7 +13,7 @@ use std::process::{Child, Command, Stdio};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
-use tauri::menu::{AboutMetadataBuilder, Menu, MenuItem, PredefinedMenuItem, Submenu};
+use tauri::menu::{Menu, MenuItem, PredefinedMenuItem, Submenu};
 use tauri::utils::config::WindowEffectsConfig;
 use tauri::window::{Effect, EffectState};
 use tauri::{TitleBarStyle, WebviewUrl, WebviewWindowBuilder};
@@ -136,17 +136,9 @@ fn open_external(url: &url::Url) {
 }
 
 fn build_menu(app: &tauri::App) -> tauri::Result<Menu<tauri::Wry>> {
-    let about = AboutMetadataBuilder::new()
-        .name(Some("JobSniper"))
-        .version(Some(env!("CARGO_PKG_VERSION")))
-        .copyright(Some("Developed by Brian · adefebrian.com"))
-        .credits(Some("Built by Brian to find his next AI engineering role.\nhttps://adefebrian.com"))
-        .website(Some("https://adefebrian.com"))
-        .website_label(Some("adefebrian.com"))
-        .authors(Some(vec!["Brian".to_string()]))
-        .build();
+
     let app_menu = Submenu::with_items(app, "JobSniper", true, &[
-        &PredefinedMenuItem::about(app, Some("About JobSniper"), Some(about))?,
+        &MenuItem::with_id(app, "about", "About JobSniper", true, None::<&str>)?,
         &PredefinedMenuItem::separator(app)?,
         &PredefinedMenuItem::hide(app, None)?,
         &PredefinedMenuItem::hide_others(app, None)?,
@@ -170,9 +162,42 @@ fn build_menu(app: &tauri::App) -> tauri::Result<Menu<tauri::Wry>> {
     Menu::with_items(app, &[&app_menu, &edit, &window])
 }
 
+/// A small About window: icon, name, version, credit and two links. Links open in the browser.
+fn show_about(app: &AppHandle) {
+    if let Some(window) = app.get_webview_window("about") {
+        let _ = window.show();
+        let _ = window.set_focus();
+        return;
+    }
+    let _ = WebviewWindowBuilder::new(app, "about", WebviewUrl::App("about.html".into()))
+        .title("About JobSniper")
+        .inner_size(300.0, 300.0)
+        .resizable(false)
+        .minimizable(false)
+        .maximizable(false)
+        .title_bar_style(TitleBarStyle::Overlay)
+        .hidden_title(true)
+        .center()
+        .initialization_script(&format!("window.__JOBSNIPER_VERSION__ = {:?};", env!("CARGO_PKG_VERSION")))
+        .on_navigation(|url| {
+            if is_local(url) {
+                true
+            } else {
+                open_external(url);
+                false
+            }
+        })
+        .build();
+}
+
 fn main() {
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_autostart::init(MacosLauncher::LaunchAgent, None))
+        .on_menu_event(|app, event| {
+            if event.id().as_ref() == "about" {
+                show_about(app);
+            }
+        })
         .setup(|app| {
             let handle = app.handle().clone();
             app.set_menu(build_menu(app)?)?;
