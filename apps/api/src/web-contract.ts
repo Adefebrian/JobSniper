@@ -21,6 +21,10 @@ const REMOTE: Record<string, string> = {
 
 type Row = Record<string, unknown>;
 
+/** Quotes stay verbatim except pictographs (JAL UI law: no emoji on screen). */
+const noEmoji = (text: string) =>
+  text.replace(/[\p{Extended_Pictographic}\u{FE0F}\u{200D}]/gu, "").replace(/\s{2,}/g, " ").trim();
+
 function iso(value: unknown): string {
   if (value instanceof Date) return value.toISOString();
   return typeof value === "string" ? new Date(value).toISOString() : "";
@@ -58,9 +62,9 @@ function targetView(j: Row, contacts: Row[], decisions: Row[] = [], fullText = f
       freshness: b.freshnessWeight ?? 0, skillOverlapCv: b.skillOverlap ?? 0,
     },
     aiEvidence: ((j.ai_evidence as Array<{ quote: string; reason?: string; source?: string }>) ?? [])
-      .map((e) => ({ quote: e.quote, context: e.source === "title" ? "Job title" : e.reason ?? "Job description" })),
-    languageEvidence: ((j.language_evidence as Array<{ quote: string }>) ?? []).map((e) => ({ quote: e.quote })),
-    jdText: fullText ? text : text.slice(0, 6_000),
+      .map((e) => ({ quote: noEmoji(e.quote), context: e.source === "title" ? "Job title" : e.reason ?? "Job description" })),
+    languageEvidence: ((j.language_evidence as Array<{ quote: string }>) ?? []).map((e) => ({ quote: noEmoji(e.quote) })),
+    jdText: noEmoji(fullText ? text : text.slice(0, 6_000)),
     translated: Boolean(j.jd_text_english),
     contacts: contacts.map(contactView),
     decisions: decisions.map((d) => ({
