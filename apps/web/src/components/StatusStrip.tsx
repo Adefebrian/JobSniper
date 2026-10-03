@@ -1,4 +1,5 @@
 import { formatAgo, parseDate } from "../utils.ts";
+import { Mascot } from "./Mascot.tsx";
 import type { StatusStrip as StatusData } from "../types.ts";
 
 /** One quiet line for the sidebar: the most recent crawl of any tier. */
@@ -7,7 +8,13 @@ export function LastCrawl({ status }: { status: StatusData }) {
     .map((value) => parseDate(value))
     .filter((value): value is Date => value !== null)
     .sort((a, b) => b.getTime() - a.getTime())[0];
-  return <p className="last-crawl">Last crawl {latest ? formatAgo(latest.toISOString()) : "never"}</p>;
+  const idle = !latest || Date.now() - latest.getTime() > 6 * 3_600_000;
+  return (
+    <p className="last-crawl">
+      <Mascot size={20} blink={false} sleepy={idle} />
+      <span>{idle && latest ? `Dozing. Last crawl ${formatAgo(latest.toISOString())}` : `Last crawl ${latest ? formatAgo(latest.toISOString()) : "never"}`}</span>
+    </p>
+  );
 }
 
 export function StatusStrip({ status, variant = "strip" }: { status: StatusData; variant?: "strip" | "stack" }) {

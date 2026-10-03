@@ -1,4 +1,4 @@
-import type { DashboardData } from "./types.ts";
+import type { DashboardData, Stats } from "./types.ts";
 
 const now = new Date();
 const hoursAgo = (hours: number) => new Date(now.getTime() - hours * 3_600_000).toISOString();
@@ -174,4 +174,20 @@ export const sampleData: DashboardData = {
     llmSpendUsd: 8.42,
     blockedSources: 2,
   },
+};
+
+const dayIso = (offset: number) => new Date(now.getTime() - offset * 86_400_000).toISOString().slice(0, 10);
+
+export const sampleStats: Stats = {
+  totals: {
+    jobs_total: 1240, jobs_today: 38, jobs_week: 410, targets_open: 600, targets_fresh: 12, targets_week: 140,
+    drafts: 2, applied: 3, applied_week: 3, replied: 1, positive: 1, emails: 44, liked: 5, companies: 462, sources_live: 31,
+  },
+  daily: [6, 5, 4, 3, 2, 1, 0].map((offset, index) => ({ day: dayIso(offset), discovered: 40 + index * 9, targeted: 12 + index * 3, applied: index % 3 === 0 ? 1 : 0 })),
+  roles: [{ label: "AI engineer", n: 48 }, { label: "Software engineer", n: 40 }, { label: "Fullstack", n: 22 }, { label: "Agentic / AI agents", n: 14 }],
+  countries: [{ label: "US", n: 60 }, { label: "UK", n: 31 }, { label: "SG", n: 18 }, { label: "Remote", n: 12 }, { label: "Other", n: 9 }],
+  levels: [{ label: "mid", n: 70 }, { label: "senior", n: 44 }, { label: "early", n: 12 }, { label: "unknown", n: 14 }],
+  modes: [{ label: "onsite", n: 80 }, { label: "remote_global", n: 22 }, { label: "remote_apac", n: 9 }, { label: "unknown", n: 29 }],
+  companies: [{ label: "Wayve", n: 9 }, { label: "OpenAI", n: 7 }, { label: "Anthropic", n: 5 }],
+  funnel: [{ label: "Discovered", n: 1240 }, { label: "Targets", n: 605 }, { label: "Drafted", n: 5 }, { label: "Applied", n: 3 }, { label: "Replied", n: 1 }],
 };

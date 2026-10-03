@@ -185,3 +185,20 @@ export interface OutboxAction {
   action: "approve" | "reject" | "schedule" | "save" | "send";
   payload?: Record<string, unknown>;
 }
+
+export interface StatCount { label: string; n: number }
+
+export interface Stats {
+  totals: {
+    jobs_total: number; jobs_today: number; jobs_week: number; targets_open: number; targets_fresh: number; targets_week: number;
+    drafts: number; applied: number; applied_week: number; replied: number; positive: number; emails: number; liked: number;
+    companies: number; sources_live: number;
+  };
+  daily: { day: string; discovered: number; targeted: number; applied: number }[];
+  roles: StatCount[];
+  countries: StatCount[];
+  levels: StatCount[];
+  modes: StatCount[];
+  companies: StatCount[];
+  funnel: StatCount[];
+}

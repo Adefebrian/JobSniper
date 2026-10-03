@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import * as api from "./api.ts";
 import { AppShell } from "./components/AppShell.tsx";
 import { LoadingState, Notice } from "./components/States.tsx";
@@ -6,10 +6,12 @@ import { CompaniesSourcesScreen } from "./screens/CompaniesSourcesScreen.tsx";
 import { OutreachScreen } from "./screens/OutreachScreen.tsx";
 import { SettingsScreen } from "./screens/SettingsScreen.tsx";
 import { TargetsScreen } from "./screens/TargetsScreen.tsx";
+import { OverviewScreen } from "./screens/OverviewScreen.tsx";
+import { cheer } from "./components/Mascot.tsx";
 import { downloadBlob, filterTargets } from "./utils.ts";
 import type { DashboardData, Feedback, JobAction, JobTarget, Outreach, OutboxAction, Profile, Source } from "./types.ts";
 
-type AppRoute = "targets" | "outreach" | "companies" | "settings";
+type AppRoute = "overview" | "targets" | "outreach" | "companies" | "settings";
 
 const EMPTY: DashboardData = {
   targets: [], outreach: [], companies: [], sources: [],
@@ -18,14 +20,14 @@ const EMPTY: DashboardData = {
   status: { lastRunT1: "", lastRunT2: "", lastRunT3: "", queueDepth: 0, llmSpendUsd: 0, blockedSources: 0 },
 };
 
-const ROUTES: AppRoute[] = ["targets", "outreach", "companies", "settings"];
+const ROUTES: AppRoute[] = ["overview", "targets", "outreach", "companies", "settings"];
 
 /** Reads "#/targets/<id>", "#targets", or "?route=settings". */
 const readLocation = (): { route: AppRoute; id: string | null } => {
   const queryRoute = new URLSearchParams(window.location.search).get("route") ?? "";
   const parts = window.location.hash.replace(/^#\/?/, "").split("/");
   const route = (queryRoute || parts[0] || "") as AppRoute;
-  if (!ROUTES.includes(route)) return { route: "targets", id: null };
+  if (!ROUTES.includes(route)) return { route: "overview", id: null };
   return { route, id: route === "targets" && parts[1] ? decodeURIComponent(parts[1]) : null };
 };
 
@@ -37,9 +39,16 @@ export function App() {
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const seenTargets = useRef<Set<string> | null>(null);
+
   const loadData = useCallback(async () => {
     try {
-      setData(await api.getDashboard());
+      const fresh = await api.getDashboard();
+      // A small hop from the mascot when a refresh brings targets we have not seen.
+      const ids = new Set(fresh.targets.map((job) => job.id));
+      if (seenTargets.current && [...ids].some((id) => !seenTargets.current?.has(id))) cheer();
+      seenTargets.current = ids;
+      setData(fresh);
       setError(null);
     } catch (caught) {
       setError(message(caught, "The local API is unavailable."));
@@ -88,6 +97,7 @@ export function App() {
 
   const onFeedback = (job: JobTarget, verdict: Feedback | "clear", note?: string) => run(async () => {
     mergeTarget(await api.sendFeedback(job.id, verdict, note));
+    if (verdict === "like") cheer();
     // Feedback re-scores the top targets on the server; pick the new order up quietly.
     void loadData();
   }, "Feedback was not saved.");
@@ -136,7 +146,8 @@ export function App() {
 
   const { route, id } = location;
   let screen;
-  if (!loaded) screen = <LoadingState />;
+  if (route === "overview") screen = <OverviewScreen name={data.settings.name} />;
+  else if (!loaded) screen = <LoadingState />;
   else if (route === "targets") screen = <TargetsScreen targets={data.targets} selectedId={id} onAction={onJobAction} onFeedback={onFeedback} onTargetUpdate={mergeTarget} onExport={(format) => onExport("targets", format)} />;
   else if (route === "outreach") screen = <OutreachScreen outreach={data.outreach} dailyCap={data.settings.dailyCap} onAction={onOutreachAction} onExport={(format) => onExport("outreach", format)} />;
   else if (route === "companies") screen = <CompaniesSourcesScreen companies={data.companies} sources={data.sources} onCompanyAction={onCompanyAction} onSourceAction={onSourceAction} onAddCompany={onAddCompany} onAddSource={onAddSource} />;

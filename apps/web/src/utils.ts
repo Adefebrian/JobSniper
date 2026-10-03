@@ -195,3 +195,77 @@ export const fitSummary = (breakdown: Record<string, number | null | undefined>)
 
 const lowerFirst = (text: string) => text.charAt(0).toLowerCase() + text.slice(1);
 const joinWords = (words: string[]) => words.length <= 1 ? words.join("") : `${words.slice(0, -1).join(", ")} and ${words[words.length - 1]}`;
+
+/* ---------- Overview helpers ---------- */
+
+/** Evaluates the one JAL curve, cubic-bezier(0.24, 1, 0.4, 1), for JS-driven motion. */
+export const easeStandard = (t: number) => {
+  const x1 = 0.24, y1 = 1, x2 = 0.4, y2 = 1;
+  const bez = (u: number, a: number, b: number) => 3 * a * u * (1 - u) ** 2 + 3 * b * u ** 2 * (1 - u) + u ** 3;
+  let lo = 0, hi = 1, u = t;
+  for (let i = 0; i < 20; i += 1) {
+    u = (lo + hi) / 2;
+    if (bez(u, x1, x2) < t) lo = u; else hi = u;
+  }
+  return bez(u, y1, y2);
+};
+
+export const prefersReducedMotion = () =>
+  typeof window !== "undefined" && typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+export const greeting = (date = new Date()) => {
+  const hour = date.getHours();
+  if (hour < 5) return "Working late";
+  if (hour < 12) return "Good morning";
+  if (hour < 18) return "Good afternoon";
+  return "Good evening";
+};
+
+export const motivation = (totals: { targets_fresh: number; applied_week: number; targets_open: number; replied: number }) => {
+  if (totals.replied > 0 && totals.applied_week > 0) return `${totals.replied} ${totals.replied === 1 ? "reply" : "replies"} in, and ${totals.applied_week} sent this week. Keep going.`;
+  if (totals.targets_fresh > 0) return `${totals.targets_fresh} fresh ${totals.targets_fresh === 1 ? "role" : "roles"} landed in the last 72 hours.`;
+  if (totals.applied_week > 0) return `${totals.applied_week} ${totals.applied_week === 1 ? "application" : "applications"} out this week. Keep the streak.`;
+  if (totals.targets_open > 0) return `${totals.targets_open} targets are waiting. Pick the best one and draft an email.`;
+  return "The scout is out looking. New roles will show up here.";
+};
+
+const COUNTRY_FIX: Record<string, string> = { UK: "GB" };
+export const countryName = (code: string) => {
+  if (code === "Remote" || code === "Other" || code.length !== 2) return code;
+  try {
+    const names = new Intl.DisplayNames(["en"], { type: "region" });
+    return names.of(COUNTRY_FIX[code] ?? code) ?? code;
+  } catch {
+    return code;
+  }
+};
+
+export const levelName = (value: string) => value === "unknown" ? "Not stated" : seniorityLabel(value);
+
+export const modeName = (value: string) => ({
+  remote_global: "Remote global", global: "Remote global",
+  remote_apac: "Remote APAC", apac: "Remote APAC",
+  remote_restricted: "Remote restricted", restricted: "Remote restricted",
+  onsite: "On-site", unknown: "Not stated",
+} as Record<string, string>)[value] ?? humanize(value);
+
+/** Deterministic monogram tint from a short palette dark enough for white initials. */
+const MONOGRAM_TINTS = ["#1f6fd1", "#0e7c86", "#2e7d32", "#b25400", "#c0392b", "#5b6770", "#8a6d3b", "#00739e"];
+export const monogramTint = (name: string) => {
+  let hash = 0;
+  for (const char of name) hash = (hash * 31 + char.charCodeAt(0)) >>> 0;
+  return MONOGRAM_TINTS[hash % MONOGRAM_TINTS.length] ?? "#5b6770";
+};
+export const initials = (name: string) => {
+  const words = name.replace(/[^\p{L}\p{N} ]/gu, " ").split(/\s+/).filter(Boolean);
+  if (words.length === 0) return "?";
+  if (words.length === 1) return (words[0] ?? "?").slice(0, 2).toUpperCase();
+  return `${words[0]?.[0] ?? ""}${words[1]?.[0] ?? ""}`.toUpperCase();
+};
+
+export const isNew = (iso: string | null | undefined, now = new Date()) => {
+  const date = parseDate(iso);
+  return Boolean(date && now.getTime() - date.getTime() < 86_400_000);
+};
+
+export const scoreBand = (score: number) => score >= 70 ? "good" : score >= 40 ? "mid" : "low";

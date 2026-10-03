@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { Mascot } from "./Mascot.tsx";
 
 export function PageHeader({ title, description, actions }: { title: string; description?: string; actions?: ReactNode }) {
   return (
@@ -21,7 +22,7 @@ export function ErrorState({ message, onRetry }: { message: string; onRetry?: ()
 }
 
 export function EmptyState({ title, description, action }: { title: string; description: string; action?: ReactNode }) {
-  return <div className="state-panel"><strong>{title}</strong><p>{description}</p>{action}</div>;
+  return <div className="state-panel state-empty"><Mascot size={40} blink={false} reactive={false} /><div className="state-text"><strong>{title}</strong><p>{description}</p>{action}</div></div>;
 }
 
 const NOTICE_TITLES = { info: "Note", warning: "Attention", success: "Done" } as const;

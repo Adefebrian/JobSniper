@@ -1,4 +1,4 @@
-import type { ApiEnvelope, ConnectionName, Connections, CvImportResult, DashboardData, JobAction, JobTarget, Outreach, OutboxAction, Profile, Source, TargetsQuery } from "./types.ts";
+import type { ApiEnvelope, Stats, ConnectionName, Connections, CvImportResult, DashboardData, JobAction, JobTarget, Outreach, OutboxAction, Profile, Source, TargetsQuery } from "./types.ts";
 
 const API_BASE = "/api";
 
@@ -29,6 +29,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return payload.data;
 }
 
+export const getStats = () => request<Stats>("/stats");
 export const getDashboard = () => request<DashboardData>("/dashboard");
 export const getTargets = (query: TargetsQuery = {}) => {
   const params = new URLSearchParams();

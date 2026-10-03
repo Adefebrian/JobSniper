@@ -3,11 +3,14 @@ import * as api from "../api.ts";
 import type { Evidence, Feedback, JobAction, JobTarget, TargetsQuery } from "../types.ts";
 import {
   contactKindLabel, filterTargets, FIT_LABELS, fitWord, formatAge, formatDateTime, htmlToText, humanize,
-  modeLabel, parseDate, seniorityLabel, shortLocation, sponsorshipLabel, toPercent,
+  isNew, modeLabel, parseDate, seniorityLabel, shortLocation, sponsorshipLabel, toPercent,
 } from "../utils.ts";
 import { EmptyState } from "../components/States.tsx";
 import { Icon, Spinner } from "../components/Icon.tsx";
 import { Popover } from "../components/Popover.tsx";
+import { Monogram } from "../components/Monogram.tsx";
+import { ScoreRing } from "../components/ScoreRing.tsx";
+import type { CSSProperties, ReactNode } from "react";
 
 type FeedbackFn = (job: JobTarget, verdict: Feedback | "clear", note?: string) => Promise<boolean>;
 
@@ -26,6 +29,9 @@ const emptyQuery: TargetsQuery = { age: "", country: "", workMode: "", sponsorsh
 const PAGE = 100;
 const DESKTOP = "(min-width: 1024px)";
 const COLLAPSE_MS = 200;
+
+/** Rows fade in with a short stagger on the first list render of the session only. */
+let introPlayed = false;
 
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -64,6 +70,8 @@ export function TargetsScreen({ targets, selectedId, onAction, onFeedback, onTar
   const [limit, setLimit] = useState(PAGE);
   const [leaving, setLeaving] = useState<Set<string>>(() => new Set());
   const [hidden, setHidden] = useState<JobTarget | null>(null);
+  const [intro] = useState(() => !introPlayed);
+  useEffect(() => { introPlayed = true; }, []);
 
   const filtered = useMemo(() => {
     const list = filterTargets(targets, query).filter((job) => !seniority || job.seniority === seniority);
@@ -194,8 +202,8 @@ export function TargetsScreen({ targets, selectedId, onAction, onFeedback, onTar
         {filtered.length === 0 ? (
           <EmptyState title="No targets match" description="Widen the filters or wait for the next crawl." />
         ) : (
-          <ul className="target-rows">
-            {visible.map((job) => <TargetRow key={job.id} job={job} active={selected?.id === job.id} leaving={leaving.has(job.id)} />)}
+          <ul className={`target-rows ${intro ? "is-intro" : ""}`}>
+            {visible.map((job, index) => <TargetRow key={job.id} job={job} index={index} active={selected?.id === job.id} leaving={leaving.has(job.id)} />)}
             {filtered.length > limit ? (
               <li className="more-row"><button className="button button-quiet" onClick={() => setLimit((current) => current + PAGE)}>Show {Math.min(PAGE, filtered.length - limit)} more</button></li>
             ) : null}
@@ -212,17 +220,30 @@ export function TargetsScreen({ targets, selectedId, onAction, onFeedback, onTar
   );
 }
 
-function TargetRow({ job, active, leaving }: { job: JobTarget; active: boolean; leaving: boolean }) {
-  const line = [job.companyName, job.location ? shortLocation(job.location) : "", shortMode(job), formatAge(job.postedAt || job.firstSeenAt)].filter(Boolean).join(" · ");
+const ModeGlyph = ({ job }: { job: JobTarget }) => <Icon name={job.workMode === "remote" ? "globe" : "building"} size={12} />;
+
+function TargetRow({ job, index, active, leaving }: { job: JobTarget; index: number; active: boolean; leaving: boolean }) {
+  const fresh = isNew(job.postedAt || job.firstSeenAt);
+  const where = job.location ? shortLocation(job.location) : "";
   return (
-    <li className={`target-item ${leaving ? "is-leaving" : ""}`} aria-hidden={leaving || undefined}>
+    <li className={`target-item ${leaving ? "is-leaving" : ""}`} aria-hidden={leaving || undefined} style={{ "--i": Math.min(index, 12) } as CSSProperties}>
       <div className="target-item-inner">
-        <a className={`target-row ${active ? "is-active" : ""}`} href={`#/targets/${encodeURIComponent(job.id)}`} aria-current={active ? "true" : undefined} title={`${job.title}\n${line}`}>
-          <span className="row-line1">
-            <span className="target-title">{job.title}</span>
-            <span className="row-score tabular" aria-label={`Score ${job.score} of 100`}>{job.score}</span>
+        <a className={`target-row ${active ? "is-active" : ""}`} href={`#/targets/${encodeURIComponent(job.id)}`} aria-current={active ? "true" : undefined}
+          title={`${job.title}\n${[job.companyName, where, shortMode(job)].filter(Boolean).join(" · ")}`}>
+          <Monogram name={job.companyName} size={28} />
+          <span className="row-text">
+            <span className="row-line1">
+              <span className="target-title">{job.title}</span>
+              {fresh ? <span className="tag-new">New</span> : null}
+            </span>
+            <span className="row-line2">
+              <span>{job.companyName}</span>
+              {where ? <span className="meta-bit"><Icon name="pin" size={12} />{where}</span> : null}
+              <span className="meta-bit"><ModeGlyph job={job} />{shortMode(job)}</span>
+              <span className="meta-bit"><Icon name="clock" size={12} />{formatAge(job.postedAt || job.firstSeenAt)}</span>
+            </span>
           </span>
-          <span className="row-line2">{line}</span>
+          <ScoreRing score={job.score} size={22} />
         </a>
       </div>
     </li>
@@ -291,6 +312,21 @@ function TargetDetail({ job: summary, desktop, onAction, onFeedback, onTargetUpd
   const remoteGlobal = job.workMode === "remote" && job.remoteScope === "global";
   const sponsors = job.sponsorship === "yes" || job.sponsorship === "registry_hit";
 
+  const [toast, setToast] = useState<string | null>(null);
+  useEffect(() => {
+    if (!toast) return;
+    const timer = window.setTimeout(() => setToast(null), 1600);
+    return () => window.clearTimeout(timer);
+  }, [toast]);
+  const copy = async (text: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setToast("Copied");
+    } catch {
+      setToast("Copy failed");
+    }
+  };
+
   const act = async (action: JobAction) => {
     setBusy(action);
     try { await onAction(job, action); } finally { setBusy(null); }
@@ -317,14 +353,20 @@ function TargetDetail({ job: summary, desktop, onAction, onFeedback, onTargetUpd
         {desktop ? null : <a className="button button-quiet back-link" href="#/targets">Back to targets</a>}
 
         <header className="detail-head">
-          <p className="muted">{job.companyName}{job.location ? ` · ${job.location}` : ""}</p>
-          <h2>{job.title}</h2>
+          <div className="detail-identity">
+            <Monogram name={job.companyName} size={44} />
+            <div className="detail-titles">
+              <p className="muted">{job.companyName}{job.location ? ` · ${job.location}` : ""}</p>
+              <h2>{job.title}{isNew(job.postedAt || job.firstSeenAt) ? <span className="tag-new">New</span> : null}</h2>
+            </div>
+            <ScoreRing score={job.score} size={44} animate />
+          </div>
           <p className="detail-meta">
-            <span className={remoteGlobal ? "text-good" : undefined}>{modeLabel(job)}</span>
-            <span>{seniorityLabel(job.seniority)}</span>
-            <span className={sponsors ? "text-good" : undefined}>{sponsorshipLabel(job.sponsorship)}</span>
-            <span>Posted {formatAge(job.postedAt || job.firstSeenAt)} ago</span>
-            {job.translated ? <span>Translated</span> : null}
+            <span className={`meta-bit ${remoteGlobal ? "text-good" : ""}`}><ModeGlyph job={job} />{modeLabel(job)}</span>
+            <span className="meta-bit"><Icon name="person" size={12} />{seniorityLabel(job.seniority)}</span>
+            <span className={`meta-bit ${sponsors ? "text-good" : ""}`}><Icon name="doc" size={12} />{sponsorshipLabel(job.sponsorship)}</span>
+            <span className="meta-bit"><Icon name="clock" size={12} />Posted {formatAge(job.postedAt || job.firstSeenAt)} ago</span>
+            {job.translated ? <span className="meta-bit">Translated</span> : null}
           </p>
           {job.jevVerified ? null : <p className="muted small">Not yet verified by Jev. Sending waits until it is.</p>}
         </header>
@@ -332,7 +374,7 @@ function TargetDetail({ job: summary, desktop, onAction, onFeedback, onTargetUpd
         <div className="detail-toolbar">
           <button className="button button-primary" disabled={busy !== null} onClick={() => act("draft")}>{busy === "draft" ? <><Spinner /> Drafting</> : "Draft email"}</button>
           <a className="button button-secondary" href={job.applyUrl || job.sourceUrl} target="_blank" rel="noopener noreferrer" onClick={() => { void onAction(job, "open"); }}>Apply</a>
-          <button className={`icon-button ${liked ? "is-on" : ""}`} aria-pressed={liked} aria-label={liked ? "Remove like" : "Like"} title={liked ? "Liked" : "Like"} onClick={() => onFeedback(job, liked ? "clear" : "like")}>
+          <button className={`icon-button like-button ${liked ? "is-on" : ""}`} aria-pressed={liked} aria-label={liked ? "Remove like" : "Like"} title={liked ? "Liked" : "Like"} onClick={() => onFeedback(job, liked ? "clear" : "like")}>
             <Icon name="thumb" filled={liked} />
           </button>
           <button className="icon-button" aria-label="Dislike and hide" title="Dislike and hide" onClick={() => onFeedback(job, "dislike")}>
@@ -350,11 +392,15 @@ function TargetDetail({ job: summary, desktop, onAction, onFeedback, onTargetUpd
         </div>
 
         <section className="detail-section">
-          <h3>Why it fits <span className="muted tabular">{job.score} / 100</span></h3>
+          <SectionTitle icon="spark" title="Why it fits" />
           {lines.length === 0 ? <p className="muted">No score breakdown yet.</p> : (
             <ul className="fit-lines">
-              {lines.map((line) => (
-                <li key={line.key}><span>{fitWord(line.pct)} {line.label.charAt(0).toLowerCase() + line.label.slice(1)}</span><span className="muted tabular">{line.pct}</span></li>
+              {lines.map((line, index) => (
+                <li key={line.key} className={index === 0 ? "is-top" : undefined}>
+                  <span className="fit-label">{fitWord(line.pct)} {line.label.charAt(0).toLowerCase() + line.label.slice(1)}</span>
+                  <span className="pill-meter" aria-hidden="true"><span style={{ transform: `scaleX(${Math.min(100, line.pct) / 100})` }} /></span>
+                  <span className="fit-num tabular">{line.pct}</span>
+                </li>
               ))}
             </ul>
           )}
@@ -362,7 +408,7 @@ function TargetDetail({ job: summary, desktop, onAction, onFeedback, onTargetUpd
 
         {tailoring || tailorError || job.tailoredCv ? (
           <section className="detail-section">
-            <h3>Tailored CV</h3>
+            <SectionTitle icon="doc" title="Tailored CV" />
             {tailoring ? <p className="progress-line" role="status"><Spinner /> Tailoring your CV for this job, about 20 seconds.</p> : null}
             {tailorError ? <p className="text-bad" role="alert">{tailorError}</p> : null}
             {job.tailoredCv && !tailoring ? (
@@ -381,17 +427,20 @@ function TargetDetail({ job: summary, desktop, onAction, onFeedback, onTargetUpd
           </section>
         ) : null}
 
-        <QuoteSection title="From the listing" quotes={job.aiEvidence} />
+        <QuoteSection title="From the listing" icon quotes={job.aiEvidence} />
 
         <section className="detail-section">
-          <h3>Contacts</h3>
+          <SectionTitle icon="people" title="Contacts" />
           {contacts.length === 0 ? <p className="muted">No contact email found. Use Apply.</p> : (
-            <ul className="record-list">
+            <ul className="contact-cards">
               {contacts.map((contact) => (
-                <li key={contact.id}>
-                  <a className="text-link" href={`mailto:${contact.email}`}>{contact.email}</a>
-                  <p className="muted">{[contact.name, contact.role, contactKindLabel(contact.kind), humanize(contact.jevVerdict)].filter(Boolean).join(" · ")}</p>
-                  {contact.sourceUrl ? <a className="text-link small" href={contact.sourceUrl} target="_blank" rel="noopener noreferrer">Source page</a> : null}
+                <li key={contact.id} className="contact-card">
+                  <span className="contact-initial" aria-hidden="true">{(contact.name || contact.email).charAt(0).toUpperCase()}</span>
+                  <span className="contact-text">
+                    <button className="contact-email" title="Copy email" onClick={() => copy(contact.email)}>{contact.email}</button>
+                    <span className="muted">{[contact.name, contactKindLabel(contact.kind), humanize(contact.jevVerdict)].filter(Boolean).join(" · ")}</span>
+                  </span>
+                  {contact.sourceUrl ? <a className="text-link small" href={contact.sourceUrl} target="_blank" rel="noopener noreferrer">Source</a> : null}
                 </li>
               ))}
             </ul>
@@ -430,19 +479,25 @@ function TargetDetail({ job: summary, desktop, onAction, onFeedback, onTargetUpd
           </details>
         </section>
       </div>
+      {toast ? <div className="toast" role="status">{toast}</div> : null}
     </section>
   );
 }
 
-function QuoteSection({ title, quotes }: { title: string; quotes: Evidence[] | undefined }) {
+function SectionTitle({ icon, title, extra }: { icon: "spark" | "doc" | "people" | "quote"; title: string; extra?: ReactNode }) {
+  return <h3 className="section-title"><Icon name={icon} size={15} />{title}{extra}</h3>;
+}
+
+function QuoteSection({ title, quotes, icon = false }: { title: string; quotes: Evidence[] | undefined; icon?: boolean }) {
   const list = quotes ?? [];
   if (list.length === 0) return null;
   return (
     <section className="detail-section">
-      <h3>{title}</h3>
+      {icon ? <SectionTitle icon="quote" title={title} /> : <h3>{title}</h3>}
       <ul className="quote-list">
         {list.map((evidence, index) => (
           <li key={`${index}-${evidence.quote.slice(0, 24)}`}>
+            <span className="quote-mark" aria-hidden="true">{"\u201C"}</span>
             <blockquote className="quote">{htmlToText(evidence.quote)}</blockquote>
             {evidence.context ? <p className="muted small">{evidence.context}</p> : null}
           </li>
