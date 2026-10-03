@@ -78,19 +78,14 @@ export function SettingsScreen({ status, settings, onSave, onReloadSettings }: P
             <Field layout="row" label="Sender" hint="Name and address." htmlFor="set-sender"><TextInput id="set-sender" value={form.sender} onChange={(event) => update("sender", event.target.value)} placeholder="Brian <you@example.com>" /></Field>
             <Field layout="row" label="Daily cap" hint="Emails per day, at most." htmlFor="set-cap"><TextInput id="set-cap" type="number" min={1} max={100} value={form.dailyCap} onChange={(event) => update("dailyCap", Number(event.target.value))} /></Field>
           </Group>
-          <Group title="Budget" description="Tailoring and drafting stop when the month's cap is reached.">
+          <Group wide title="Budget" description="Tailoring and drafting stop when the month's cap is reached.">
             <Field layout="row" label="Monthly LLM budget" hint="In US dollars." htmlFor="set-budget"><TextInput id="set-budget" type="number" min={1} value={form.llmBudgetUsd} onChange={(event) => update("llmBudgetUsd", Number(event.target.value))} /></Field>
             <div className="ui-field ui-field--row">
               <div className="ui-field-text"><span className="ui-field-label">Spent this month</span><span className="ui-field-hint tabular">${spend.toFixed(2)} of ${budget.toFixed(0)}</span></div>
               <div className="ui-field-control"><Meter value={spend} max={budget || 1} tone={budget && spend / budget > 0.8 ? "warning" : "accent"} label={`$${spend.toFixed(2)} of $${budget} spent`} /></div>
             </div>
           </Group>
-          <Group title="About" description="JobSniper, version 0.1.0.">
-            <div className="about-body">
-              <p>Developed by <strong>Brian</strong> to find his next AI engineering role.</p>
-              <p><a href="https://adefebrian.com" target="_blank" rel="noreferrer">adefebrian.com</a> · <a href="https://github.com/Adefebrian/JobSniper" target="_blank" rel="noreferrer">Source on GitHub</a></p>
-            </div>
-          </Group>
+          
           <Group wide title="Countries and weights" description="How much each country and each score part counts. Unlisted countries use Other.">
             <div className="weight-grid">
               {form.countries.map((country, index) => (
@@ -105,6 +100,12 @@ export function SettingsScreen({ status, settings, onSave, onReloadSettings }: P
                   <TextInput id={`s-${key}`} type="number" min={0} step="any" value={value} onChange={(event) => updateScore(key as keyof Profile["scoreWeights"], Number(event.target.value))} />
                 </Field>
               ))}
+            </div>
+          </Group>
+          <Group wide title="About" description="JobSniper, version 0.1.0.">
+            <div className="about-body">
+              <p>Developed by <strong>Brian</strong> to find his next AI engineering role.</p>
+              <p><a href="https://adefebrian.com" target="_blank" rel="noreferrer">adefebrian.com</a> · <a href="https://github.com/Adefebrian/JobSniper" target="_blank" rel="noreferrer">Source on GitHub</a></p>
             </div>
           </Group>
       </div>
