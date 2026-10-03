@@ -1,0 +1,17 @@
+{
+  "data": {
+    "jobs": [
+      {
+        "id": "GEN-10",
+        "title": "LLM Platform Engineer",
+        "url": "https://careers.example.com/jobs/GEN-10",
+        "apply_url": "https://careers.example.com/jobs/GEN-10/apply",
+        "company_name": "Example Systems",
+        "workplace": "Remote worldwide",
+        "summary": "Build reliable LLM platform APIs.",
+        "published": "2026-10-02T00:00:00Z"
+      }
+    ]
+  }
+}
+

@@ -1,0 +1,55 @@
+[package]
+name = "jobsniper-crawler"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.80"
+description = "Polite, public-web crawler worker for JobSniper"
+license = "private"
+publish = false
+
+[lib]
+name = "jobsniper_crawler"
+path = "src/lib.rs"
+
+[[bin]]
+name = "jobsniper-crawler"
+path = "src/main.rs"
+
+[dependencies]
+async-trait = "0.1"
+chrono = { version = "0.4", features = ["serde"] }
+csv = "1.3"
+futures = "0.3"
+quick-xml = "0.37"
+regex = "1.11"
+reqwest = { version = "0.12", default-features = false, features = [
+  "brotli",
+  "gzip",
+  "json",
+  "rustls-tls",
+  "stream",
+] }
+scraper = "0.20"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+sha2 = "0.10"
+sqlx = { version = "0.8", default-features = false, features = [
+  "chrono",
+  "json",
+  "postgres",
+  "runtime-tokio-rustls",
+] }
+thiserror = "2.0"
+tokio = { version = "1.40", features = [
+  "macros",
+  "process",
+  "rt-multi-thread",
+  "signal",
+  "sync",
+  "time",
+] }
+url = "2.5"
+uuid = { version = "1.10", features = ["serde", "v4"] }
+
+[dev-dependencies]
+tokio = { version = "1.40", features = ["macros", "rt-multi-thread", "time"] }

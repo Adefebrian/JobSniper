@@ -1,0 +1,8 @@
+node_modules/
+dist/
+target/
+.env
+.DS_Store
+*.log
+test-results.xml
+.jal/shots/

@@ -1,0 +1,8 @@
+User-agent: JobSniper
+Allow: /public/
+Disallow: /
+
+User-agent: *
+Disallow: /private/
+Sitemap: https://example.com/sitemap.xml
+

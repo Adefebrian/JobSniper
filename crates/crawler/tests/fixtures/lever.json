@@ -1,0 +1,13 @@
+[
+  {
+    "id": "a1b2c3",
+    "text": "Applied AI Engineer",
+    "hostedUrl": "https://jobs.lever.co/acme/a1b2c3",
+    "applyUrl": "https://jobs.lever.co/acme/a1b2c3/apply",
+    "categories": {
+      "location": "Remote - APAC"
+    },
+    "descriptionPlain": "Build product-facing machine learning systems and AI-assisted workflows.",
+    "createdAt": 1790944200000
+  }
+]

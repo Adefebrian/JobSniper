@@ -1,0 +1,15 @@
+{
+  "jobs": [
+    {
+      "id": "ashby-100",
+      "jobId": "8e54d427",
+      "title": "Applied AI Software Engineer",
+      "location": "London, UK",
+      "jobUrl": "https://jobs.ashbyhq.com/acme/8e54d427",
+      "applyUrl": "https://jobs.ashbyhq.com/acme/8e54d427/application",
+      "publishedAt": "2026-10-01T12:00:00Z",
+      "descriptionHtml": "<p>Own Applied AI features from prototype to production.</p>"
+    }
+  ]
+}
+

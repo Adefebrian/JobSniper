@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>Example Careers</title>
+    <item>
+      <title>Generative AI Engineer</title>
+      <link>https://careers.example.com/jobs/rss-1</link>
+      <guid>rss-1</guid>
+      <location>Remote - APAC</location>
+      <description><![CDATA[<p>Create generative AI product features.</p>]]></description>
+      <pubDate>Thu, 02 Oct 2026 08:00:00 GMT</pubDate>
+    </item>
+  </channel>
+</rss>
+

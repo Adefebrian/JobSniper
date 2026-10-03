@@ -1,0 +1,16 @@
+{
+  "jobs": [
+    {
+      "id": 4812901,
+      "title": "AI Fullstack Engineer",
+      "updated_at": "2026-10-02T09:30:00Z",
+      "first_published": "2026-09-29T09:30:00Z",
+      "absolute_url": "https://job-boards.greenhouse.io/acme/jobs/4812901",
+      "location": {
+        "name": "Singapore"
+      },
+      "content": "<p>Ship production LLM agents and fullstack products. Contact careers@example.com.</p>"
+    }
+  ]
+}
+

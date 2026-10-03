@@ -1,0 +1,16 @@
+{
+  "jobPostings": [
+    {
+      "title": "AI Software Engineer",
+      "externalPath": "/acme/job/AI-Engineer/700",
+      "locationsText": "Sydney, Australia",
+      "postedOn": "2026-10-02",
+      "jobPostingId": "WD-700",
+      "jobPostingInfo": {
+        "jobDescription": "<p>Develop AI-enabled software and deploy LLM features.</p>",
+        "applyUrl": "/acme/job/AI-Engineer/700/apply"
+      }
+    }
+  ]
+}
+
