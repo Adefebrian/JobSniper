@@ -263,6 +263,67 @@ export function mountWebContract(app: Hono, s: Services): void {
     return ok(await detail(id));
   });
 
+  // Overview: what the sniper caught, what Brian did with it, and the last 7 days' shape.
+  app.get("/api/stats", async () => {
+    const q = async <T extends Row>(sql: string) => (await s.database.query<T>(sql)).rows;
+    const [totals] = await q(`
+      SELECT
+        (SELECT count(*) FROM jobs)::int AS jobs_total,
+        (SELECT count(*) FROM jobs WHERE first_seen_at > now() - interval '24 hours')::int AS jobs_today,
+        (SELECT count(*) FROM jobs WHERE first_seen_at > now() - interval '7 days')::int AS jobs_week,
+        (SELECT count(*) FROM jobs WHERE status = 'targeted' AND closed_at IS NULL)::int AS targets_open,
+        (SELECT count(*) FROM jobs WHERE status = 'targeted' AND closed_at IS NULL
+           AND coalesce(posted_at, first_seen_at) > now() - interval '72 hours')::int AS targets_fresh,
+        (SELECT count(*) FROM jobs WHERE status IN ('targeted','drafted','sent','replied')
+           AND first_seen_at > now() - interval '7 days')::int AS targets_week,
+        (SELECT count(*) FROM outreach WHERE status = 'draft')::int AS drafts,
+        (SELECT count(*) FROM outreach WHERE status IN ('sent','replied'))::int AS applied,
+        (SELECT count(*) FROM outreach WHERE status IN ('sent','replied') AND sent_at > now() - interval '7 days')::int AS applied_week,
+        (SELECT count(*) FROM outreach WHERE status = 'replied')::int AS replied,
+        (SELECT count(*) FROM outreach WHERE reply_class = 'positive')::int AS positive,
+        (SELECT count(DISTINCT email) FROM contacts WHERE invalid_at IS NULL)::int AS emails,
+        (SELECT count(*) FROM job_feedback WHERE verdict = 'like')::int AS liked,
+        (SELECT count(*) FROM companies WHERE discovered_via <> 'feed_holder')::int AS companies,
+        (SELECT count(*) FROM career_sources WHERE last_ok_at > now() - interval '24 hours')::int AS sources_live`);
+    const daily = await q(`
+      SELECT to_char(d, 'YYYY-MM-DD') AS day,
+             (SELECT count(*) FROM jobs j WHERE coalesce(j.posted_at, j.first_seen_at)::date = d::date)::int AS discovered,
+             (SELECT count(*) FROM jobs j WHERE coalesce(j.posted_at, j.first_seen_at)::date = d::date
+                AND j.status IN ('targeted','drafted','sent','replied'))::int AS targeted,
+             (SELECT count(*) FROM outreach o WHERE o.sent_at::date = d::date)::int AS applied
+      FROM generate_series(current_date - 6, current_date, interval '1 day') d ORDER BY d`);
+    // "This week" = posted in the last 7 days (first sighting when a source has no posting date).
+    const week = `j.status IN ('targeted','drafted','sent','replied') AND coalesce(j.posted_at, j.first_seen_at) > now() - interval '7 days'`;
+    const roles = await q(`
+      SELECT CASE
+          WHEN j.title ~* '(agent|agentic)' THEN 'Agentic / AI agents'
+          WHEN j.title ~* '(full[- ]?stack)' THEN 'Fullstack'
+          WHEN j.title ~* '(\mai\M|\mllm|genai|applied ai)' AND j.title ~* 'engineer' THEN 'AI engineer'
+          WHEN j.title ~* '(machine learning|\mml\M)' THEN 'ML engineer'
+          WHEN j.title ~* '(back[- ]?end|platform|infra)' THEN 'Backend / platform'
+          WHEN j.title ~* '(forward deployed|solutions)' THEN 'Forward deployed'
+          WHEN j.title ~* '(front[- ]?end|product engineer|web)' THEN 'Frontend / product'
+          ELSE 'Software engineer' END AS label, count(*)::int AS n
+      FROM jobs j WHERE ${week} GROUP BY 1 ORDER BY 2 DESC`);
+    const countries = await q(`
+      SELECT coalesce(nullif(j.countries[1], ''), CASE WHEN j.remote_scope IN ('remote_global','remote_apac') THEN 'Remote' ELSE 'Other' END) AS label,
+             count(*)::int AS n
+      FROM jobs j WHERE ${week} GROUP BY 1 ORDER BY 2 DESC LIMIT 8`);
+    const levels = await q(`SELECT j.seniority AS label, count(*)::int AS n FROM jobs j WHERE ${week} GROUP BY 1 ORDER BY 2 DESC`);
+    const modes = await q(`SELECT j.remote_scope AS label, count(*)::int AS n FROM jobs j WHERE ${week} GROUP BY 1 ORDER BY 2 DESC`);
+    const companies = await q(`
+      SELECT c.name AS label, count(*)::int AS n FROM jobs j JOIN companies c ON c.id = j.company_id
+      WHERE ${week} GROUP BY 1 ORDER BY 2 DESC LIMIT 6`);
+    const funnel = [
+      { label: "Discovered", n: Number(totals?.jobs_total ?? 0) },
+      { label: "Targets", n: Number(totals?.targets_open ?? 0) + Number(totals?.drafts ?? 0) + Number(totals?.applied ?? 0) },
+      { label: "Drafted", n: Number(totals?.drafts ?? 0) + Number(totals?.applied ?? 0) },
+      { label: "Applied", n: Number(totals?.applied ?? 0) },
+      { label: "Replied", n: Number(totals?.replied ?? 0) },
+    ];
+    return ok({ totals, daily, roles, countries, levels, modes, companies, funnel });
+  });
+
   app.get("/api/targets/:id/tailored-cv", async (context) => {
     const row = (await s.database.query<{ file_name: string }>("SELECT file_name FROM tailored_cvs WHERE job_id = $1", [context.req.param("id")])).rows[0];
     if (!row) throw new ApiError(404, "tailored_cv_missing", "No tailored CV for this job yet.");
