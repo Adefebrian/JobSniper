@@ -133,6 +133,15 @@ where
             }
             Err(error) => {
                 let blocked = error.class() == ErrorClass::Blocked;
+                // "Breaker open" means we chose not to ask; it says nothing new about the source,
+                // so it must not count toward that source's failures (that cascade blocked 25 boards).
+                let breaker_hold = error.to_string().contains("circuit breaker is open");
+                if breaker_hold {
+                    self.queue
+                        .report(&task.id, TaskResult::Retry { error: error.to_string(), backoff_seconds: 15 * 60 })
+                        .await?;
+                    return Err(error);
+                }
                 if let Err(sink_error) = self
                     .sink
                     .record_failure(

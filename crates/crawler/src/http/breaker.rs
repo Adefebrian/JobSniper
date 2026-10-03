@@ -90,8 +90,16 @@ impl Default for FailureTracker {
     }
 }
 
+/// Breaker key. Multi-tenant ATS APIs host thousands of independent company boards on one domain,
+/// so one board's failure must not trip every other company: key those by host + board path.
 fn domain(url: &Url) -> String {
-    url.host_str().unwrap_or_default().to_ascii_lowercase()
+    let host = url.host_str().unwrap_or_default().to_ascii_lowercase();
+    const SHARED: [&str; 4] = ["boards-api.greenhouse.io", "api.lever.co", "api.ashbyhq.com", "api.smartrecruiters.com"];
+    if SHARED.contains(&host.as_str()) {
+        let board: Vec<&str> = url.path_segments().map(|s| s.take(5).collect()).unwrap_or_default();
+        return format!("{host}/{}", board.join("/"));
+    }
+    host
 }
 
 #[cfg(test)]
