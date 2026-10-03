@@ -54,7 +54,8 @@ export function AppShell({ route, status, counts, children }: Props) {
         </nav>
         <LastCrawl status={status} />
         <a className="credit" href="https://adefebrian.com" target="_blank" rel="noreferrer">
-          Developed by <strong>Brian</strong> · adefebrian.com
+          <span>Developed by <strong>Brian</strong></span>
+          <span>adefebrian.com</span>
         </a>
       </aside>
       <header className="topbar" data-tauri-drag-region>

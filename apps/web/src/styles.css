@@ -267,7 +267,7 @@ img, svg, canvas { max-width: 100%; }
 .nav-label { min-width: 0; overflow-wrap: anywhere; }
 .nav-count { color: var(--label-2); font-size: var(--t-caption); }
 .last-crawl { display: flex; align-items: center; gap: var(--s-8); margin-top: auto; padding: 0 var(--s-8); color: var(--label-2); font-size: var(--t-caption); line-height: var(--lh-caption); }
-.credit { display: block; margin-top: var(--s-8); padding: var(--s-4) var(--s-8); color: var(--label-3); font-size: var(--t-micro); line-height: var(--lh-micro); text-decoration: none; }
+.credit { display: grid; gap: 2px; margin-top: var(--s-8); padding: var(--s-4) var(--s-8); color: var(--label-3); font-size: var(--t-micro); line-height: var(--lh-micro); text-decoration: none; }
 .credit strong { color: var(--label-2); font-weight: 600; }
 @media (hover: hover) { .credit:hover { color: var(--label-2); } }
 
@@ -777,9 +777,15 @@ input[type="number"].ui-control { font-variant-numeric: tabular-nums; }
 
 /* Settings: grouped field rows, two columns when the pane is wide. */
 .saved-note { color: var(--positive); }
-.settings-columns { gap: var(--s-32); }
-.settings-column { display: grid; gap: var(--s-32); align-content: start; min-width: 0; }
-@container (min-width: 1120px) { .settings-columns { grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; } }
+/* Settings: groups pair up in rows (Profile|Connections, CV|Sending, Budget|About) and each pair shares
+   one height, so the two columns always line up; Countries spans the full width underneath. */
+.settings-columns { display: grid; gap: var(--s-32); align-items: stretch; }
+.settings-group { grid-template-rows: auto 1fr; }
+.settings-group > .field-group { height: 100%; }
+@container (min-width: 1120px) {
+  .settings-columns { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .settings-group--wide { grid-column: 1 / -1; }
+}
 .field-group > .ui-field,
 .field-group > form > .ui-field { padding: var(--s-12) var(--s-16); }
 .field-group > * + * { border-top: 1px solid var(--separator); }

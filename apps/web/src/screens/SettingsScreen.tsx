@@ -24,9 +24,9 @@ const DEFAULT_CV_PATH = "~/Documents/CV_Ade_Febrian_AI_Engineer.docx";
 const errorText = (caught: unknown, fallback: string) => caught instanceof Error ? caught.message : fallback;
 
 /** A titled group of field rows on one card, like a System Settings pane. */
-function Group({ title, description, children, action }: { title: string; description?: string; children: ReactNode; action?: ReactNode }) {
+function Group({ title, description, children, action, wide }: { title: string; description?: string; children: ReactNode; action?: ReactNode; wide?: boolean }) {
   return (
-    <Section title={title} description={description} action={action}>
+    <Section title={title} description={description} action={action} className={wide ? "settings-group settings-group--wide" : "settings-group"}>
       <Card flush className="field-group">{children}</Card>
     </Section>
   );
@@ -62,7 +62,6 @@ export function SettingsScreen({ status, settings, onSave, onReloadSettings }: P
         </>
       } />
       <div className="pane-body settings-columns">
-        <div className="settings-column">
           <Group title="Profile" description="Every draft and greeting is built from this.">
             <Field layout="row" label="Name" htmlFor="set-name"><TextInput id="set-name" value={form.name} onChange={(event) => update("name", event.target.value)} /></Field>
             <Field layout="row" label="Nickname" hint="What JobSniper calls you." htmlFor="set-nick"><TextInput id="set-nick" value={form.nickname ?? ""} onChange={(event) => update("nickname", event.target.value)} placeholder="Brian" /></Field>
@@ -73,18 +72,12 @@ export function SettingsScreen({ status, settings, onSave, onReloadSettings }: P
             <Field layout="row" label="Skills" hint="Comma separated." htmlFor="set-skills"><TextInput id="set-skills" value={form.skills.join(", ")} onChange={(event) => update("skills", event.target.value.split(",").map((skill) => skill.trim()).filter(Boolean))} /></Field>
             <Field layout="stack" label="Summary" htmlFor="set-summary"><TextArea id="set-summary" rows={4} value={form.summary} onChange={(event) => update("summary", event.target.value)} /></Field>
           </Group>
-
+          <ConnectionsGroup />
           <CvImport variants={form.cvVariants} onImported={async () => { setForm(await onReloadSettings()); setDirty(false); }} />
-
           <Group title="Sending" description="Checked before a message can enter the send queue.">
             <Field layout="row" label="Sender" hint="Name and address." htmlFor="set-sender"><TextInput id="set-sender" value={form.sender} onChange={(event) => update("sender", event.target.value)} placeholder="Brian <you@example.com>" /></Field>
             <Field layout="row" label="Daily cap" hint="Emails per day, at most." htmlFor="set-cap"><TextInput id="set-cap" type="number" min={1} max={100} value={form.dailyCap} onChange={(event) => update("dailyCap", Number(event.target.value))} /></Field>
           </Group>
-
-        </div>
-
-        <div className="settings-column">
-          <ConnectionsGroup />
           <Group title="Budget" description="Tailoring and drafting stop when the month's cap is reached.">
             <Field layout="row" label="Monthly LLM budget" hint="In US dollars." htmlFor="set-budget"><TextInput id="set-budget" type="number" min={1} value={form.llmBudgetUsd} onChange={(event) => update("llmBudgetUsd", Number(event.target.value))} /></Field>
             <div className="ui-field ui-field--row">
@@ -92,15 +85,13 @@ export function SettingsScreen({ status, settings, onSave, onReloadSettings }: P
               <div className="ui-field-control"><Meter value={spend} max={budget || 1} tone={budget && spend / budget > 0.8 ? "warning" : "accent"} label={`$${spend.toFixed(2)} of $${budget} spent`} /></div>
             </div>
           </Group>
-
-
           <Group title="About" description="JobSniper, version 0.1.0.">
             <div className="about-body">
               <p>Developed by <strong>Brian</strong> to find his next AI engineering role.</p>
               <p><a href="https://adefebrian.com" target="_blank" rel="noreferrer">adefebrian.com</a> · <a href="https://github.com/Adefebrian/JobSniper" target="_blank" rel="noreferrer">Source on GitHub</a></p>
             </div>
           </Group>
-          <Group title="Countries and weights" description="How much each country and each score part counts. Unlisted countries use Other.">
+          <Group wide title="Countries and weights" description="How much each country and each score part counts. Unlisted countries use Other.">
             <div className="weight-grid">
               {form.countries.map((country, index) => (
                 <Field key={country.code} label={country.name} htmlFor={`w-${country.code}`}>
@@ -116,7 +107,6 @@ export function SettingsScreen({ status, settings, onSave, onReloadSettings }: P
               ))}
             </div>
           </Group>
-        </div>
       </div>
     </div>
   );
