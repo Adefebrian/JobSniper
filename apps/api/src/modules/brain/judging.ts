@@ -162,7 +162,7 @@ export function scoreJob(input: {
     ? Math.max(0, (input.now.getTime() - new Date(input.postedAt).getTime()) / 86_400_000)
     : 3;
   const freshnessWeight =
-    input.weights.freshnessDays.find((item) => ageDays <= item.maxDays)?.weight ?? 0.2;
+    input.weights.freshnessDays.find((item) => ageDays <= item.maxDays)?.weight ?? 0.3; // PRD 7.4: stale but open
   const roleFit = Math.max(0, Math.min(1, input.roleFit));
   const skillOverlap = Math.max(0, Math.min(1, input.skillOverlap));
   const countryWeight = Math.max(0, Math.min(1.2, input.countryWeight));

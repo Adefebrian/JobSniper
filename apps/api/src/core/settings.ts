@@ -30,9 +30,9 @@ export const RUNTIME_DEFAULT_SETTINGS: Settings = {
     },
     freshnessDays: [
       { maxDays: 1, weight: 1 },
-      { maxDays: 3, weight: 0.85 },
-      { maxDays: 7, weight: 0.6 },
-      { maxDays: 14, weight: 0.35 },
+      { maxDays: 3, weight: 0.9 },
+      { maxDays: 7, weight: 0.75 },
+      { maxDays: 30, weight: 0.5 },
     ],
     skillOverlap: 1,
     country: 1,

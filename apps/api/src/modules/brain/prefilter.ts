@@ -17,7 +17,7 @@ const EXCLUDED_TITLE =
 const NON_SWE_TITLE =
   /(designer|manufactur|mechanical|electrical|civil|hardware|firmware|legal|finance|accounting|support engineer|customer engineer|security engineer|quality engineer|test engineer|qa engineer|analytics engineer|network engineer|field engineer|sales engineer|solutions? consultant|technical writer|it engineer|systems administrator)/i;
 const ENGINEERING_TITLE =
-  /(engineer|engineering|developer|programmer|\bswe\b|software|full[- ]?stack|back[- ]?end|front[- ]?end|architect|\bdevops\b|\bmlops\b|\bsre\b|entwickler)/i;
+  /(engineer|engineering|developer|programmer|\bswe\b|software|full[- ]?stack|back[- ]?end|front[- ]?end|architect|\bdevops\b|\bmlops\b|\bsre\b|entwickler|technical staff|\bmts\b|tech lead)/i;
 const AI_TITLE = /\b(ai|a\.i\.|ki|ml|llms?|genai|nlp|agentic|agents?)\b/i;
 const AI_CASE = /\b(AI|ML|LLMs?|RAG|NLP|GenAI|MLOps)\b/;
 const AI_WORDS =

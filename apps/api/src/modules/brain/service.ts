@@ -160,10 +160,11 @@ export class BrainService {
     );
     const verdicts = await this.verdicts(id, title, str(row, "company_name") || "", location, englishText, prefilter, local);
 
+    const judge = verdicts.verifiedByJev ? "Jev" : "Local rules (Jev unreachable)";
     const reject =
       verdicts.seniority === "graduate" ? "Graduate or internship level."
-      : verdicts.roleRelevance < 0.5 ? "Jev: not an AI software engineering role."
-      : verdicts.languageFit < 0.5 ? "Jev: needs a language other than English (or is nationality restricted)."
+      : verdicts.roleRelevance < 0.5 ? `${judge}: not an AI software engineering role.`
+      : verdicts.languageFit < 0.5 ? `${judge}: needs a language other than English (or is nationality restricted).`
       : null;
 
     const skills = Array.isArray(settings.profile.skills) ? settings.profile.skills.map(String) : [];
