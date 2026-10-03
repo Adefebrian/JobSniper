@@ -3,6 +3,9 @@
 // system WebKit window, keeps crawling when the window is closed, and stops both on Quit.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+#[cfg(target_os = "macos")]
+mod glass;
+
 use std::fs::{create_dir_all, OpenOptions};
 use std::net::{SocketAddr, TcpStream};
 use std::path::PathBuf;
@@ -143,6 +146,16 @@ fn main() {
                 tray = tray.icon(icon.clone());
             }
             tray.build(app)?;
+
+            #[cfg(target_os = "macos")]
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.with_webview(|webview| unsafe {
+                    let added = glass::add_sidebar_glass(webview.inner() as *mut objc2::runtime::AnyObject);
+                    if !added {
+                        eprintln!("Liquid Glass unavailable (macOS < 26); using vibrancy");
+                    }
+                });
+            }
 
             open_dashboard_when_ready(handle);
             Ok(())
