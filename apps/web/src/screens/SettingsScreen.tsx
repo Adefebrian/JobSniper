@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState, type ReactNode } from "react";
 import * as api from "../api.ts";
 import type { ConnectionName, Connections, Profile, StatusStrip } from "../types.ts";
 import { FIT_LABELS, tidyName } from "../utils.ts";
-import { Badge, Button, Card, Field, Meter, Notice, PageHeader, Section, TextArea, TextInput } from "../components/ui/index.ts";
+import { Badge, Button, Toggle, Card, Field, Meter, Notice, PageHeader, Section, TextArea, TextInput } from "../components/ui/index.ts";
 
 interface Props {
   status: StatusStrip;
@@ -11,7 +11,14 @@ interface Props {
   onReloadSettings: () => Promise<Profile>;
 }
 
-const SECRETS: { name: ConnectionName; label: string; help: string }[] = [
+const SEARCH_KEYS: { name: ConnectionName; label: string; help: ReactNode }[] = [
+  { name: "BRAVE_SEARCH_KEY", label: "Brave Search API key", help: <>Recommended. Free for about 2,000 searches a month. <a className="text-link" href="https://brave.com/search/api/" target="_blank" rel="noopener noreferrer">Get a key</a></> },
+  { name: "SERPER_KEY", label: "Serper key", help: <>Google results through Serper. <a className="text-link" href="https://serper.dev" target="_blank" rel="noopener noreferrer">Get a key</a></> },
+  { name: "GOOGLE_CSE_KEY", label: "Google CSE key", help: "Google Programmable Search API key." },
+  { name: "GOOGLE_CSE_CX", label: "Google CSE ID", help: "The search engine ID (cx) that goes with the key." },
+];
+
+const SECRETS: { name: ConnectionName; label: string; help: ReactNode }[] = [
   { name: "OPENAI_API_KEY", label: "OpenAI API key", help: "Judging, drafting, and CV tailoring." },
   { name: "JEV_API_KEY", label: "Jev API key", help: "Verifies jobs and contacts before anything is sent." },
   { name: "GMAIL_CLIENT_ID", label: "Gmail client ID", help: "From your Google Cloud OAuth client." },
@@ -23,10 +30,32 @@ const DEFAULT_CV_PATH = "~/Documents/CV_Ade_Febrian_AI_Engineer.docx";
 
 const errorText = (caught: unknown, fallback: string) => caught instanceof Error ? caught.message : fallback;
 
-/** A titled group of field rows on one card, like a System Settings pane. */
-function Group({ title, description, children, action, wide }: { title: string; description?: string; children: ReactNode; action?: ReactNode; wide?: boolean }) {
+/** Email-only mode: on by default; off lets jobs without an application email back into Targets. */
+function EmailOnlyRow() {
+  const [on, setOn] = useState<boolean | null>(null);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => { api.getSniperMode().then((r) => setOn(r.requireApplyEmail)).catch(() => setOn(true)); }, []);
+  const change = async (next: boolean) => {
+    setBusy(true);
+    try { setOn((await api.setSniperMode(next)).requireApplyEmail); } finally { setBusy(false); }
+  };
   return (
-    <Section title={title} description={description} action={action} className={wide ? "settings-group settings-group--wide" : "settings-group"}>
+    <div className="ui-field ui-field--row">
+      <div className="ui-field-text">
+        <span className="ui-field-label">Email-only targets</span>
+        <span className="ui-field-hint">{on === false ? "Jobs without an application email are shown too." : "Only jobs with a real application email become targets."}</span>
+      </div>
+      <div className="ui-field-control">
+        {on === null ? null : <Toggle label={busy ? "Updating" : on ? "On" : "Off"} checked={on} onChange={(next) => void change(next)} />}
+      </div>
+    </div>
+  );
+}
+
+/** A titled group of field rows on one card, like a System Settings pane. */
+function Group({ title, description, children, action, wide, id }: { title: string; description?: string; children: ReactNode; action?: ReactNode; wide?: boolean; id?: string }) {
+  return (
+    <Section id={id} title={title} description={description} action={action} className={wide ? "settings-group settings-group--wide" : "settings-group"}>
       <Card flush className="field-group">{children}</Card>
     </Section>
   );
@@ -38,6 +67,12 @@ export function SettingsScreen({ status, settings, onSave, onReloadSettings }: P
   const [saved, setSaved] = useState(false);
   const [dirty, setDirty] = useState(false);
   useEffect(() => { if (!dirty) setForm(settings); }, [settings, dirty]);
+  // "#/settings/search" (from the Sniper card) lands on the search keys.
+  useEffect(() => {
+    if (!window.location.hash.endsWith("/search")) return;
+    const timer = window.setTimeout(() => document.getElementById("sniper-search-title")?.scrollIntoView({ block: "start" }), 50);
+    return () => window.clearTimeout(timer);
+  }, []);
   const touch = () => { setSaved(false); setDirty(true); };
   const update = <K extends keyof Profile>(key: K, value: Profile[K]) => { setForm((current) => ({ ...current, [key]: value })); touch(); };
   const updateScore = (key: keyof Profile["scoreWeights"], value: number) => { setForm((current) => ({ ...current, scoreWeights: { ...current.scoreWeights, [key]: value } })); touch(); };
@@ -72,13 +107,15 @@ export function SettingsScreen({ status, settings, onSave, onReloadSettings }: P
             <Field layout="row" label="Skills" hint="Comma separated." htmlFor="set-skills"><TextInput id="set-skills" value={form.skills.join(", ")} onChange={(event) => update("skills", event.target.value.split(",").map((skill) => skill.trim()).filter(Boolean))} /></Field>
             <Field layout="stack" label="Summary" htmlFor="set-summary"><TextArea id="set-summary" rows={4} value={form.summary} onChange={(event) => update("summary", event.target.value)} /></Field>
           </Group>
-          <ConnectionsGroup />
-          <CvImport variants={form.cvVariants} onImported={async () => { setForm(await onReloadSettings()); setDirty(false); }} />
+          <ConnectionsGroup part="accounts" />
+          <CvImport variants={form.cvVariants} skills={form.skills} onImported={async () => { setForm(await onReloadSettings()); setDirty(false); }} />
+          <ConnectionsGroup part="search" />
           <Group title="Sending" description="Checked before a message can enter the send queue.">
+            <EmailOnlyRow />
             <Field layout="row" label="Sender" hint="Name and address." htmlFor="set-sender"><TextInput id="set-sender" value={form.sender} onChange={(event) => update("sender", event.target.value)} placeholder="Brian <you@example.com>" /></Field>
             <Field layout="row" label="Daily cap" hint="Emails per day, at most." htmlFor="set-cap"><TextInput id="set-cap" type="number" min={1} max={100} value={form.dailyCap} onChange={(event) => update("dailyCap", Number(event.target.value))} /></Field>
           </Group>
-          <Group wide title="Budget" description="Tailoring and drafting stop when the month's cap is reached.">
+          <Group title="Budget" description="Tailoring and drafting stop when the month's cap is reached.">
             <Field layout="row" label="Monthly LLM budget" hint="In US dollars." htmlFor="set-budget"><TextInput id="set-budget" type="number" min={1} value={form.llmBudgetUsd} onChange={(event) => update("llmBudgetUsd", Number(event.target.value))} /></Field>
             <div className="ui-field ui-field--row">
               <div className="ui-field-text"><span className="ui-field-label">Spent this month</span><span className="ui-field-hint tabular">${spend.toFixed(2)} of ${budget.toFixed(0)}</span></div>
@@ -113,7 +150,7 @@ export function SettingsScreen({ status, settings, onSave, onReloadSettings }: P
   );
 }
 
-function CvImport({ variants, onImported }: { variants: Profile["cvVariants"]; onImported: () => Promise<void> }) {
+function CvImport({ variants, skills, onImported }: { variants: Profile["cvVariants"]; skills: string[]; onImported: () => Promise<void> }) {
   const [cvPath, setCvPath] = useState(DEFAULT_CV_PATH);
   const [importing, setImporting] = useState(false);
   const [message, setMessage] = useState<{ tone: "positive" | "warning"; text: string } | null>(null);
@@ -149,12 +186,16 @@ function CvImport({ variants, onImported }: { variants: Profile["cvVariants"]; o
           <div className="ui-field-control is-text">{variant.fileName ? variant.fileName : <Badge>No file yet</Badge>}</div>
         </div>
       ))}
+      <div className="ui-field ui-field--row">
+        <div className="ui-field-text"><span className="ui-field-label">Skills matched</span><span className="ui-field-hint">Overview marks each market skill against these.</span></div>
+        <div className="ui-field-control is-text">{skills.length ? `${skills.length} skills from your profile` : <Badge tone="warning">None yet, import the CV</Badge>}</div>
+      </div>
       {extracted ? <ExtractedProfile profile={extracted} /> : null}
     </Group>
   );
 }
 
-function ConnectionsGroup() {
+function ConnectionsGroup({ part }: { part: "accounts" | "search" }) {
   const [status, setStatus] = useState<Connections | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [message, setMessage] = useState<{ tone: "positive" | "warning"; text: string } | null>(null);
@@ -191,6 +232,16 @@ function ConnectionsGroup() {
   };
   const gmailReady = Boolean(status?.GMAIL_CLIENT_ID && status?.GMAIL_CLIENT_SECRET);
 
+  if (part === "search") {
+    return (
+      <Group id="sniper-search" title="Search for the web sniper" description="The sniper searches the web for listings that state an apply email. One key is enough; Brave is tried first.">
+        {message ? <div className="group-notice"><Notice tone={message.tone} title={message.text} onClose={() => setMessage(null)} /></div> : null}
+        {SEARCH_KEYS.map((secret) => (
+          <SecretRow key={secret.name} {...secret} isSet={status ? Boolean(status[secret.name]) : null} onSave={(value) => saveSecret(secret.name, secret.label, value)} />
+        ))}
+      </Group>
+    );
+  }
   return (
     <Group title="Connections" description="Keys live in the macOS Keychain. Saved values are never shown.">
       {loadError ? <div className="group-notice"><Notice tone="warning" title="Status unavailable">{loadError}</Notice></div> : null}
@@ -206,7 +257,7 @@ function ConnectionsGroup() {
         </div>
       </div>
       {SECRETS.map((secret) => (
-        <SecretRow key={secret.name} {...secret} isSet={status ? status[secret.name] : null} onSave={(value) => saveSecret(secret.name, secret.label, value)} />
+        <SecretRow key={secret.name} {...secret} isSet={status ? Boolean(status[secret.name]) : null} onSave={(value) => saveSecret(secret.name, secret.label, value)} />
       ))}
     </Group>
   );
@@ -217,7 +268,7 @@ function StatusBadge({ value, on, off }: { value: boolean | null; on: string; of
   return <Badge tone={value ? "positive" : "neutral"}>{value ? on : off}</Badge>;
 }
 
-function SecretRow({ name, label, help, isSet, onSave }: { name: ConnectionName; label: string; help: string; isSet: boolean | null; onSave: (value: string) => Promise<boolean> }) {
+function SecretRow({ name, label, help, isSet, onSave }: { name: ConnectionName; label: string; help: ReactNode; isSet: boolean | null; onSave: (value: string) => Promise<boolean> }) {
   const [value, setValue] = useState("");
   const [busy, setBusy] = useState(false);
   const save = async (next: string) => {

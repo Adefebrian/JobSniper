@@ -377,6 +377,33 @@ export function mountWebContract(app: Hono, s: Services): void {
     });
   });
 
+  // Email-only mode switch. On (default): only jobs with an application email are targets.
+  app.get("/api/sniper/mode", async () => {
+    const row = (await s.database.query<{ v: boolean | null }>("SELECT (value #>> '{}')::boolean AS v FROM settings WHERE key = 'require_apply_email'")).rows[0];
+    return ok({ requireApplyEmail: row?.v ?? true });
+  });
+  app.put("/api/sniper/mode", async (context) => {
+    const body = requireObject(await context.req.json().catch(() => null));
+    const on = body.requireApplyEmail !== false;
+    await s.database.query(
+      `INSERT INTO settings (key, value) VALUES ('require_apply_email', to_jsonb($1::boolean))
+       ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()`,
+      [on],
+    );
+    if (on) {
+      await s.database.query(
+        `UPDATE jobs SET status = 'skipped', skip_reason = 'No application email (email-only mode is on).', updated_at = now()
+         WHERE status = 'targeted' AND apply_method <> 'email'`,
+      );
+    } else {
+      await s.database.query(
+        `UPDATE jobs SET status = 'new', next_judge_at = now(), updated_at = now()
+         WHERE status = 'skipped' AND skip_reason LIKE 'No application email%' AND closed_at IS NULL`,
+      );
+    }
+    return ok({ requireApplyEmail: on });
+  });
+
   app.get("/api/targets/:id/tailored-cv", async (context) => {
     const row = (await s.database.query<{ file_name: string }>("SELECT file_name FROM tailored_cvs WHERE job_id = $1", [context.req.param("id")])).rows[0];
     if (!row) throw new ApiError(404, "tailored_cv_missing", "No tailored CV for this job yet.");

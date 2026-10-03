@@ -60,3 +60,30 @@ describe("place labels", () => {
     expect(ageGroup(new Date(2026, 8, 1, 9, 0).toISOString(), now)).toBe("Older");
   });
 });
+
+import { emailFirst, jdBlocks } from "../src/utils.ts";
+
+describe("email-first targets", () => {
+  test("keeps jobs with an apply address above higher-scoring ones", () => {
+    const form = { ...sampleData.targets[0]!, id: "form", score: 99, applyMethod: "form" as const, applyEmail: null };
+    const email = { ...sampleData.targets[0]!, id: "email", score: 10, applyMethod: "email" as const, applyEmail: "jobs@x.io" };
+    expect(filterTargets([form, email], {}).map((job) => job.id)).toEqual(["email", "form"]);
+    expect(emailFirst(email, form)).toBeLessThan(0);
+  });
+});
+
+describe("job description blocks", () => {
+  test("reads headings, bullet lists, and paragraphs", () => {
+    const blocks = jdBlocks("## About us\nWe build agents.\nWhat you will do:\n• Ship evals\n• Own the API\nApply by email.");
+    expect(blocks.map((block) => block.kind)).toEqual(["heading", "para", "heading", "list", "para"]);
+    expect(blocks[3]).toEqual({ kind: "list", items: ["Ship evals", "Own the API"] });
+    expect(blocks[2]).toEqual({ kind: "heading", text: "What you will do" });
+  });
+
+  test("cuts one long flat paragraph into readable pieces", () => {
+    const flat = Array.from({ length: 12 }, (_, index) => `Sentence number ${index + 1} talks about the role in some detail here.`).join(" ");
+    const blocks = jdBlocks(flat);
+    expect(blocks).toHaveLength(4);
+    expect(blocks.every((block) => block.kind === "para")).toBe(true);
+  });
+});

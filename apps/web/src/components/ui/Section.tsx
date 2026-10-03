@@ -7,7 +7,7 @@ export function Section({ title, description, action, children, className = "", 
   action?: ReactNode;
   children: ReactNode;
   className?: string;
-  id?: string;
+  id?: string | undefined;
 }) {
   return (
     <section className={`ui-section ${className}`.trim()} aria-labelledby={id ? `${id}-title` : undefined}>

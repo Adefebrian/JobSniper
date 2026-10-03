@@ -1,21 +1,34 @@
 import { useEffect, useState, type CSSProperties } from "react";
 import * as api from "../api.ts";
-import type { StatCount, Stats } from "../types.ts";
-import { countryName, formatAge, greeting, levelName, motivation, percentOf, placeLabel, scoreLabel, seniorityLabel } from "../utils.ts";
+import type { SniperStatus, StatCount, Stats } from "../types.ts";
+import { agoPhrase, countryName, formatAge, greeting, levelName, motivation, percentOf, placeLabel, scoreLabel, seniorityLabel } from "../utils.ts";
 import { Mascot } from "../components/Mascot.tsx";
+import { Icon } from "../components/Icon.tsx";
 import { Badge, Button, Card, EmptyState, GoalRing, LoadingRows, Meta, Meter, MeterRow, Monogram, ScoreRing, Section, Stat } from "../components/ui/index.ts";
 
 interface Props {
   nickname: string;
+  /** Tests pass the sniper status directly; the app fetches it. */
+  initialSniper?: SniperStatus | null;
   /** Tests pass stats directly; the app fetches them. */
   initialStats?: Stats | null;
 }
 
 const WEEKDAY = new Intl.DateTimeFormat("en", { weekday: "short" });
 
-export function OverviewScreen({ nickname, initialStats = null }: Props) {
+export function OverviewScreen({ nickname, initialStats = null, initialSniper = null }: Props) {
   const [stats, setStats] = useState<Stats | null>(initialStats);
   const [error, setError] = useState<string | null>(null);
+  const [sniper, setSniper] = useState<SniperStatus | null>(initialSniper);
+
+  useEffect(() => {
+    if (initialSniper) return;
+    let live = true;
+    const load = () => api.getSniper().then((data) => { if (live) setSniper(data); }).catch(() => { if (live) setSniper(null); });
+    void load();
+    const timer = window.setInterval(load, 30_000);
+    return () => { live = false; window.clearInterval(timer); };
+  }, [initialSniper]);
 
   useEffect(() => {
     if (initialStats) return;
@@ -39,12 +52,12 @@ export function OverviewScreen({ nickname, initialStats = null }: Props) {
           <p>{stats ? motivation(stats.totals) : error ? "Your numbers are not available right now. They will appear after the next refresh." : "Gathering this week's numbers."}</p>
         </div>
       </header>
-      {stats ? <Board stats={stats} /> : <LoadingRows rows={4} label="Loading your numbers" />}
+      {stats ? <Board stats={stats} sniper={sniper} /> : <LoadingRows rows={4} label="Loading your numbers" />}
     </div>
   );
 }
 
-function Board({ stats }: { stats: Stats }) {
+function Board({ stats, sniper }: { stats: Stats; sniper: SniperStatus | null }) {
   const t = stats.totals;
   const me = stats.me ?? { nickname: "Brian", weeklyGoal: 10, appliedThisWeek: t.applied_week };
   const goal = me.weeklyGoal || 10;
@@ -54,6 +67,10 @@ function Board({ stats }: { stats: Stats }) {
   const skills = stats.skills ?? [];
   const inCv = skills.filter((skill) => skill.inCv).length;
   const maxSkill = Math.max(...skills.map((skill) => skill.n), 1);
+
+  const emailTargets = t.email_targets ?? 0;
+  const emailToday = t.email_targets_24h ?? 0;
+  const newCompanies = t.new_company_targets ?? 0;
 
   const openness = [
     { label: "Sponsor a visa", n: share.sponsor_yes },
@@ -65,6 +82,20 @@ function Board({ stats }: { stats: Stats }) {
   return (
     <div className="board">
       <div className="board-row row-hero">
+        <Card className="email-card" title="Email sniper" action={emailToday > 0 ? <Badge tone="positive">+{emailToday.toLocaleString("en")} today</Badge> : undefined}>
+          <div className="email-hero">
+            <span className="email-hero-mark" aria-hidden="true"><Icon name="mail" size={24} /></span>
+            <div className="email-hero-text">
+              <strong className="tabular">{emailTargets.toLocaleString("en")}</strong>
+              <span>{emailTargets === 1 ? "job you can apply to by email" : "jobs you can apply to by email"}</span>
+            </div>
+          </div>
+          <p className="card-note">Every address was found in the listing itself, with the sentence that states it. None are guessed.</p>
+          <div className="card-foot">
+            <Button variant="primary" href="#/targets">Open email targets</Button>
+            <span className="card-meta tabular">{(t.pages_read_24h ?? 0).toLocaleString("en")} pages read today</span>
+          </div>
+        </Card>
         <Card className="goal-card" title="Weekly goal">
           <div className="goal">
             <GoalRing value={me.appliedThisWeek} goal={goal} />
@@ -77,6 +108,15 @@ function Board({ stats }: { stats: Stats }) {
             <Button variant="primary" href="#/targets">Review targets</Button>
             <Button variant="plain" href="#/settings">Change goal</Button>
           </div>
+        </Card>
+      </div>
+
+      <div className="board-row row-status">
+        <SniperCard sniper={sniper} />
+        <Card className="new-card" title="New companies">
+          <Stat value={newCompanies} label="Targets at startups and early-stage teams" size="lg" delta={`${percentOf(newCompanies, t.targets_open)}% of open targets`} />
+          <Meter value={newCompanies} max={Math.max(t.targets_open, 1)} />
+          <p className="card-note">Each one comes with the line that says the company is new.</p>
         </Card>
         <Card className="open-card" title="How open the market is to you" action={<span className="card-meta tabular">{share.total.toLocaleString("en")} targets this week</span>}>
           <ul className="open-grid">
@@ -103,8 +143,9 @@ function Board({ stats }: { stats: Stats }) {
                     <ScoreRing score={job.score} size={40} animate />
                   </span>
                   <span className="best-title">{job.title}</span>
+                  {job.apply_email ? <span className="row-email"><Icon name="mail" size={12} />{job.apply_email}</span> : null}
                   <span className="best-meta"><Meta parts={[job.company, placeLabel(job.location), seniorityLabel(job.seniority), `${formatAge(job.posted_at)} ago`]} /></span>
-                  <span className="best-foot">{scoreLabel(job.score)}</span>
+                  <span className="best-foot">{job.new_company ? <Badge tone="accent">New company</Badge> : null}{scoreLabel(job.score)}</span>
                 </a>
               </li>
             ))}
@@ -225,5 +266,33 @@ function Funnel({ steps }: { steps: StatCount[] }) {
       </ol>
       {applied === 0 ? <p className="card-note">No applications yet. Open a target and press Draft email to send your first.</p> : null}
     </>
+  );
+}
+
+const SNIPER_STATE: Record<SniperStatus["state"], { label: string; tone: "positive" | "neutral" | "warning" }> = {
+  running: { label: "Running", tone: "positive" },
+  idle: { label: "Idle", tone: "neutral" },
+  paused: { label: "Paused", tone: "warning" },
+};
+
+/** What the web sniper is doing right now, or why it is not. */
+function SniperCard({ sniper }: { sniper: SniperStatus | null }) {
+  const state = sniper ? SNIPER_STATE[sniper.state] : null;
+  return (
+    <Card className="sniper-card" title="Sniper" action={state ? <Badge tone={state.tone}>{state.label}</Badge> : <Badge>Checking</Badge>}>
+      {!sniper ? <p className="card-note">Reading the sniper status.</p> : sniper.state === "running" ? (
+        <dl className="facts">
+          <div><dt>Searching</dt><dd>{sniper.lastQuery || "Starting up"}</dd></div>
+          <div><dt>Found</dt><dd className="tabular">{(sniper.lastFound ?? 0).toLocaleString("en")} {sniper.lastFound === 1 ? "listing" : "listings"}</dd></div>
+          {sniper.provider ? <div><dt>Using</dt><dd>{sniper.provider}</dd></div> : null}
+          {sniper.at ? <div><dt>Updated</dt><dd>{agoPhrase(sniper.at)}</dd></div> : null}
+        </dl>
+      ) : (
+        <>
+          <p className="card-note">{sniper.reason || (sniper.state === "paused" ? "Paused." : "Waiting for its next run.")}</p>
+          {sniper.state === "idle" ? <div className="card-foot"><Button variant="plain" icon="chevronRight" href="#/settings/search">Add a search key</Button></div> : null}
+        </>
+      )}
+    </Card>
   );
 }

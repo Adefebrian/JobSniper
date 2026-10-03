@@ -45,6 +45,12 @@ export class BrainRepository {
     return result.rows.map((r) => ({ verdict: r.verdict, title: r.title, company: r.company, evidence: r.evidence.slice(0, 400), note: r.note }));
   }
 
+  /** Email-only mode (default on): jobs without an application email are not targets. */
+  async requireApplyEmail(): Promise<boolean> {
+    const row = (await this.database.query<{ v: boolean | null }>("SELECT (value #>> '{}')::boolean AS v FROM settings WHERE key = 'require_apply_email'")).rows[0];
+    return row?.v ?? true;
+  }
+
   async feedbackFor(jobId: string): Promise<"like" | "dislike" | null> {
     const result = await this.database.query<{ verdict: "like" | "dislike" }>("SELECT verdict FROM job_feedback WHERE job_id = $1", [jobId]);
     return result.rows[0]?.verdict ?? null;

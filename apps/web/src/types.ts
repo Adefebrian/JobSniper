@@ -90,6 +90,16 @@ export interface JobTarget {
   jdText: string;
   contacts: Contact[];
   decisions: Decision[];
+  /** How the listing says to apply. "email" jobs are the sniper's main target. */
+  applyMethod?: "email" | "form" | "unknown";
+  /** A real address stated in the listing, never guessed. */
+  applyEmail?: string | null;
+  /** The exact sentence the address was found in. */
+  applyQuote?: string | null;
+  newCompany?: boolean;
+  newCompanyQuote?: string | null;
+  /** Where the listing was found, e.g. "Hacker News Who is Hiring". */
+  source?: string;
 }
 
 export interface Outreach {
@@ -153,9 +163,18 @@ export interface Profile {
   llmBudgetUsd: number;
 }
 
-export type ConnectionName = "OPENAI_API_KEY" | "JEV_API_KEY" | "GMAIL_CLIENT_ID" | "GMAIL_CLIENT_SECRET" | "SMTP_PASSWORD";
+export type ConnectionName = "OPENAI_API_KEY" | "JEV_API_KEY" | "GMAIL_CLIENT_ID" | "GMAIL_CLIENT_SECRET" | "SMTP_PASSWORD" | "BRAVE_SEARCH_KEY" | "SERPER_KEY" | "GOOGLE_CSE_KEY" | "GOOGLE_CSE_CX";
 
-export type Connections = Record<ConnectionName, boolean> & { GMAIL_CONNECTED: boolean };
+export type Connections = Partial<Record<ConnectionName, boolean>> & { GMAIL_CONNECTED: boolean };
+
+export interface SniperStatus {
+  state: "idle" | "running" | "paused";
+  reason?: string;
+  provider?: string;
+  lastQuery?: string;
+  lastFound?: number;
+  at?: string;
+}
 
 export interface StatusStrip {
   lastRunT1: string;
@@ -197,6 +216,7 @@ export interface Stats {
     jobs_total: number; jobs_today: number; jobs_week: number; targets_open: number; targets_fresh: number; targets_week: number;
     drafts: number; applied: number; applied_week: number; replied: number; positive: number; emails: number; liked: number;
     companies: number; sources_live: number;
+    email_targets?: number; email_targets_24h?: number; new_company_targets?: number; pages_read_24h?: number;
   };
   daily: { day: string; discovered: number; targeted: number; applied: number }[];
   roles: StatCount[];
@@ -210,6 +230,6 @@ export interface Stats {
   /** Counts out of `total` targets this week. */
   share: { total: number; remote_open: number; sponsor_yes: number; mid: number; agentic: number };
   /** Top fresh matches. */
-  best: { id: string; title: string; company: string; location: string; score: number; remote_scope: string; seniority: string; posted_at: string }[];
+  best: { id: string; title: string; company: string; location: string; score: number; remote_scope: string; seniority: string; posted_at: string; apply_email?: string | null; new_company?: boolean }[];
   me: { nickname: string; weeklyGoal: number; appliedThisWeek: number };
 }

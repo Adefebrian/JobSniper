@@ -1,4 +1,4 @@
-import type { ApiEnvelope, Stats, ConnectionName, Connections, CvImportResult, DashboardData, JobAction, JobTarget, Outreach, OutboxAction, Profile, Source, TargetsQuery } from "./types.ts";
+import type { ApiEnvelope, SniperStatus, Stats, ConnectionName, Connections, CvImportResult, DashboardData, JobAction, JobTarget, Outreach, OutboxAction, Profile, Source, TargetsQuery } from "./types.ts";
 
 const API_BASE = "/api";
 
@@ -30,6 +30,12 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const getStats = () => request<Stats>("/stats");
+export const getSniper = () => request<SniperStatus>("/sniper");
+export const getSniperMode = () => request<{ requireApplyEmail: boolean }>("/sniper/mode");
+export const setSniperMode = (requireApplyEmail: boolean) => request<{ requireApplyEmail: boolean }>("/sniper/mode", {
+  method: "PUT",
+  body: JSON.stringify({ requireApplyEmail }),
+});
 export const getDashboard = () => request<DashboardData>("/dashboard");
 export const getTargets = (query: TargetsQuery = {}) => {
   const params = new URLSearchParams();

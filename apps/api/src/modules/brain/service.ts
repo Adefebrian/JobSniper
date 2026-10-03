@@ -83,6 +83,7 @@ export type JobFilters = {
 export class BrainService {
   private nextExpiry = 0;
   private examples: FeedbackExample[] = [];
+  private requireEmail = true;
   private preference: (text: string) => number | null = () => null;
 
   constructor(
@@ -130,6 +131,7 @@ export class BrainService {
   }
 
   private async loadFeedback(): Promise<void> {
+    this.requireEmail = await this.repository.requireApplyEmail();
     this.examples = await this.repository.feedbackExamples(8);
     this.preference = preferenceModel(this.examples);
   }
@@ -177,6 +179,18 @@ export class BrainService {
         scoreBreakdown: emptyBreakdown(),
         skipReason: prefilter.reason ?? "Prefilter rejected",
         jevVerified: true,
+      });
+      return;
+    }
+
+    // Email-only mode: decide on the application email first, before any paid call.
+    const earlyApply = detectApplyEmail(jdText, typeof row.apply_url === "string" ? row.apply_url : null)
+      ?? (str(row, "jd_text_english") ? detectApplyEmail(str(row, "jd_text_english"), null) : null);
+    if (this.requireEmail && !earlyApply) {
+      await this.repository.setApply(id, null);
+      await this.repository.updateJudgment({
+        id, status: "skipped", aiEvidence: prefilter.evidence, languageEvidence: prefilter.languageEvidence, score: 0,
+        scoreBreakdown: emptyBreakdown(), skipReason: "No application email (email-only mode is on).", jevVerified: true,
       });
       return;
     }

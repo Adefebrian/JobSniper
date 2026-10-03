@@ -30,7 +30,7 @@ const render = async (stats: typeof sampleStats, nickname = "Brian") => {
   const host = window.document.createElement("div");
   window.document.body.appendChild(host);
   const root = createRoot(host as unknown as Element);
-  await act(async () => { root.render(<OverviewScreen nickname={nickname} initialStats={stats} />); });
+  await act(async () => { root.render(<OverviewScreen nickname={nickname} initialStats={stats} initialSniper={{ state: "idle", reason: "Add a Brave Search, Serper or Google search key in Settings > Connections." }} />); });
   return { host, unmount: () => act(async () => { root.unmount(); }) };
 };
 
@@ -43,6 +43,12 @@ describe("Overview", () => {
     expect(text).toContain("7 to go this week");
     expect(text).toContain("3 of 10 applications sent since Monday.");
     for (const title of ["Weekly goal", "How open the market is to you", "Best matches today", "Skills the market wants this week", "Last 7 days", "Roles", "Countries", "Levels", "Pipeline", "Most active companies"]) expect(text).toContain(title);
+    expect(text).toContain("24jobs you can apply to by email");
+    expect(text).toContain("+5 today");
+    expect(text).toContain("Add a Brave Search");
+    expect(host.querySelector('a[href="#/settings/search"]')).not.toBeNull();
+    expect(text).toContain("New companies");
+    expect(host.querySelector(".best-card .row-email")?.textContent).toBe("jobs@northstar.example");
     expect(host.querySelectorAll(".best-card")).toHaveLength(1);
     expect(host.querySelector(".best-card")?.getAttribute("href")).toBe("#/targets/job-northstar");
     expect(text).toContain("3 of 6 in your CV");

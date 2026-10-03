@@ -24,6 +24,12 @@ export const sampleData: DashboardData = {
       sourceUrl: "https://northstar.example/careers/ns-ai-204",
       applyUrl: "https://northstar.example/careers/ns-ai-204/apply",
       status: "targeted",
+      applyMethod: "email",
+      applyEmail: "jobs@northstar.example",
+      applyQuote: "Send your CV to jobs@northstar.example with the role in the subject.",
+      newCompany: true,
+      newCompanyQuote: "We are a seed-stage team of eight.",
+      source: "Hacker News Who is Hiring",
       score: 94,
       scoreBreakdown: { roleFit: 100, seniority: 92, modeVisa: 96, freshness: 88, skillOverlapCv: 94 },
       aiEvidence: [
@@ -183,7 +189,7 @@ const dayIso = (offset: number) => new Date(now.getTime() - offset * 86_400_000)
 export const sampleStats: Stats = {
   totals: {
     jobs_total: 1240, jobs_today: 38, jobs_week: 410, targets_open: 600, targets_fresh: 12, targets_week: 140,
-    drafts: 2, applied: 3, applied_week: 3, replied: 1, positive: 1, emails: 44, liked: 5, companies: 462, sources_live: 31,
+    drafts: 2, applied: 3, applied_week: 3, replied: 1, positive: 1, emails: 44, liked: 5, companies: 462, sources_live: 31, email_targets: 24, email_targets_24h: 5, new_company_targets: 9, pages_read_24h: 120,
   },
   daily: [6, 5, 4, 3, 2, 1, 0].map((offset, index) => ({ day: dayIso(offset), discovered: 40 + index * 9, targeted: 12 + index * 3, applied: index % 3 === 0 ? 1 : 0 })),
   roles: [{ label: "AI engineer", n: 48 }, { label: "Software engineer", n: 40 }, { label: "Fullstack", n: 22 }, { label: "Agentic / AI agents", n: 14 }],
@@ -198,7 +204,7 @@ export const sampleStats: Stats = {
   ],
   share: { total: 140, remote_open: 31, sponsor_yes: 40, mid: 70, agentic: 36 },
   best: [
-    { id: "job-northstar", title: "AI Software Engineer", company: "Northstar Labs", location: "Singapore / Remote APAC", score: 94, remote_scope: "apac", seniority: "mid", posted_at: hoursAgo(20) },
+    { id: "job-northstar", title: "AI Software Engineer", company: "Northstar Labs", location: "Singapore / Remote APAC", score: 94, remote_scope: "apac", seniority: "mid", posted_at: hoursAgo(20), apply_email: "jobs@northstar.example", new_company: true },
   ],
   me: { nickname: "Brian", weeklyGoal: 10, appliedThisWeek: 3 },
 };

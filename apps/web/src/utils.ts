@@ -114,6 +114,42 @@ export const htmlToText = (value: string | null | undefined) => {
 
 const HIDDEN_STATUSES = new Set(["skipped", "blacklisted", "closed"]);
 
+const isEmailApply = (job: Pick<JobTarget, "applyMethod" | "applyEmail">) => job.applyMethod === "email" && Boolean(job.applyEmail);
+/** Jobs that state an apply address always rank above the rest, whatever the sort. */
+export const emailFirst = (a: Pick<JobTarget, "applyMethod" | "applyEmail">, b: Pick<JobTarget, "applyMethod" | "applyEmail">) =>
+  Number(isEmailApply(b)) - Number(isEmailApply(a));
+
+export type JdBlock = { kind: "heading"; text: string } | { kind: "list"; items: string[] } | { kind: "para"; text: string };
+
+/**
+ * Splits a job description into headings, lists, and paragraphs.
+ * "## X" and short lines ending in ":" are headings; "• " or "- " lines are list items.
+ * One long flat paragraph (older records) is cut into paragraphs of about three sentences.
+ */
+export const jdBlocks = (text: string): JdBlock[] => {
+  const lines = text.split(/\n+/).map((line) => line.trim()).filter(Boolean);
+  const blocks: JdBlock[] = [];
+  for (const line of lines) {
+    const item = line.match(/^(?:\u2022|-|\*)\s+(.*)$/);
+    if (item) {
+      const last = blocks[blocks.length - 1];
+      if (last && last.kind === "list") last.items.push(item[1] ?? "");
+      else blocks.push({ kind: "list", items: [item[1] ?? ""] });
+      continue;
+    }
+    const heading = line.match(/^#{1,6}\s+(.*)$/);
+    if (heading) { blocks.push({ kind: "heading", text: heading[1] ?? "" }); continue; }
+    if (line.length < 60 && line.endsWith(":")) { blocks.push({ kind: "heading", text: line.slice(0, -1) }); continue; }
+    if (line.length > 480) {
+      const sentences = line.split(/(?<=[.!?])\s+(?=[A-Z0-9"\u201C(])/);
+      for (let index = 0; index < sentences.length; index += 3) blocks.push({ kind: "para", text: sentences.slice(index, index + 3).join(" ") });
+      continue;
+    }
+    blocks.push({ kind: "para", text: line });
+  }
+  return blocks;
+};
+
 export const filterTargets = (targets: JobTarget[], query: TargetsQuery, now = new Date()) => {
   return targets.filter((job) => {
     if (HIDDEN_STATUSES.has(job.status)) return false;
@@ -128,11 +164,11 @@ export const filterTargets = (targets: JobTarget[], query: TargetsQuery, now = n
     if (query.hasEmail && usableContacts(job).length === 0) return false;
     if (query.status && job.status !== query.status) return false;
     if (query.search) {
-      const haystack = `${job.companyName} ${job.title} ${job.location}`.toLowerCase();
+      const haystack = `${job.companyName} ${job.title} ${job.location} ${job.applyEmail ?? ""}`.toLowerCase();
       if (!haystack.includes(query.search.toLowerCase())) return false;
     }
     return true;
-  }).sort((a, b) => b.score - a.score);
+  }).sort((a, b) => emailFirst(a, b) || b.score - a.score);
 };
 
 export const filterOutreach = (items: Outreach[], tab: string) => {
@@ -299,7 +335,7 @@ const US_STATES = new Set([
 ]);
 
 const REGIONS = new Set(["europe", "emea", "apac", "latam", "americas", "north america", "northern america", "asia", "global", "worldwide", "anywhere", "eu"]);
-const NOISE = /\b(remote(ly)?|hybrid|on-?site|office|hq|headquarters|in the|in|or|and)\b/gi;
+const NOISE = /\b(remote(ly)?|hybrid|on-?site|in-?person|office|hq|headquarters|full[- ]?time|part[- ]?time|contract(or)?|permanent|temporary|in the|in|or|and)\b/gi;
 
 export const countryShort = (code: string | null | undefined) => {
   if (!code) return "";
@@ -317,7 +353,7 @@ export const placeLabel = (location: string | null | undefined, countryCode?: st
   if (!raw) return fallback || "Location not stated";
   const usFirst = countryShort(countryCode) === "US";
   const parse = (segment: string) => {
-    const tokens = segment.split(/\s*(?:,|:|\s-\s|\band\b)\s*/i).map((part) => part.replace(NOISE, " ").replace(/\s+/g, " ").trim()).filter(Boolean);
+    const tokens = segment.split(/\s*(?:,|:|\s-\s|\band\b)\s*/i).map((part) => part.replace(NOISE, " ").replace(/\s+/g, " ").replace(/^[^\p{L}]+|[^\p{L}.]+$/gu, "").trim()).filter(Boolean);
     let city = "";
     let country = "";
     const countries = new Set<string>();
@@ -329,7 +365,7 @@ export const placeLabel = (location: string | null | undefined, countryCode?: st
       if (isState && (usFirst || key.length > 2 || !(key in COUNTRY_WORDS))) { country ||= "US"; continue; }
       if (key in COUNTRY_WORDS) { const name = COUNTRY_WORDS[key] ?? ""; if (name) { countries.add(name); country ||= name; } else regions.add(token); continue; }
       if (REGIONS.has(key)) { regions.add(token); continue; }
-      if (/\d/.test(key)) continue;
+      if (/\d/.test(key) || /^(days?|weeks?|week|hours?|months?|years?)\b/.test(key)) continue;
       key = token;
       if (!city) city = key;
     }
@@ -346,7 +382,8 @@ export const placeLabel = (location: string | null | undefined, countryCode?: st
   if (first.city) return `${first.city}${plus}`;
   if (first.countries.size === 2) return [...first.countries].join(" and ");
   if (country) return `${country}${plus}`;
-  return `${[...first.regions][0] ?? raw.split(",")[0]}${plus}`;
+  const region = [...first.regions][0];
+  return region ? `${region}${plus}` : "Location varies";
 };
 
 export const modeShort = (job: Pick<JobTarget, "workMode">) => job.workMode === "remote" ? "Remote" : job.workMode === "hybrid" ? "Hybrid" : "On-site";

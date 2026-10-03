@@ -3,7 +3,7 @@ import { Icon } from "../components/Icon.tsx";
 import * as api from "../api.ts";
 import type { Feedback, JobAction, JobTarget, TargetsQuery } from "../types.ts";
 import {
-  ageGroup, contactKindLabel, filterTargets, FIT_LABELS, fitSummary, formatAge, formatDateTime, hostOf, htmlToText, humanize,
+  ageGroup, contactKindLabel, emailFirst, jdBlocks, filterTargets, FIT_LABELS, fitSummary, formatAge, formatDateTime, hostOf, htmlToText, humanize,
   modeLabel, modeShort, parseDate, placeLabel, scoreLabel, seniorityLabel, sponsorshipLabel, toPercent,
 } from "../utils.ts";
 import {
@@ -49,6 +49,7 @@ const goTo = (id: string | null) => {
 };
 
 const postedIso = (job: JobTarget) => job.postedAt || job.firstSeenAt;
+export const isEmailJob = (job: JobTarget) => job.applyMethod === "email" && Boolean(job.applyEmail);
 const postedTime = (job: JobTarget) => parseDate(postedIso(job))?.getTime() ?? 0;
 
 const sorters: Record<Sort, (a: JobTarget, b: JobTarget) => number> = {
@@ -62,14 +63,17 @@ export function TargetsScreen({ targets, selectedId, onAction, onFeedback, onTar
   const [query, setQuery] = useState<TargetsQuery>(emptyQuery);
   const [seniority, setSeniority] = useState("");
   const [sort, setSort] = useState<Sort>("score");
+  const [scope, setScope] = useState<"email" | "all">("email");
   const [limit, setLimit] = useState(PAGE);
   const [leaving, setLeaving] = useState<Set<string>>(() => new Set());
   const [hidden, setHidden] = useState<JobTarget | null>(null);
 
   const filtered = useMemo(() => {
-    const list = filterTargets(targets, query).filter((job) => !seniority || job.seniority === seniority);
-    return sort === "score" ? list : [...list].sort(sorters[sort]);
-  }, [targets, query, seniority, sort]);
+    const list = filterTargets(targets, query).filter((job) => (!seniority || job.seniority === seniority) && (scope === "all" || isEmailJob(job)));
+    return sort === "score" ? list : [...list].sort((a, b) => emailFirst(a, b) || sorters[sort](a, b));
+  }, [targets, query, seniority, sort, scope]);
+  const emailCount = useMemo(() => filterTargets(targets, {}).filter(isEmailJob).length, [targets]);
+  const allCount = useMemo(() => filterTargets(targets, {}).length, [targets]);
   const countries = useMemo(() => [...new Set(targets.map((job) => job.country).filter(Boolean))].sort(), [targets]);
   const visible = filtered.slice(0, limit);
   const grouped = GROUPS.map((group) => ({ group, jobs: visible.filter((job) => ageGroup(postedIso(job)) === group) })).filter((entry) => entry.jobs.length > 0);
@@ -120,7 +124,7 @@ export function TargetsScreen({ targets, selectedId, onAction, onFeedback, onTar
   return (
     <div className={`targets split ${showDetail && !desktop ? "is-detail" : ""}`}>
       <section className="split-list targets-list" aria-label="Targets">
-        <PageHeader title="Targets" meta={filtered.length.toLocaleString("en")} actions={
+        <PageHeader title="Targets" actions={
           <Popover label={filterCount ? `Filters, ${filterCount} on` : "Filters"} align="end" panelClassName="filters-panel" trigger={(props) => (
             <button type="button" className={`ui-icon-button ${filterCount ? "is-on" : ""}`} {...props}>
               <Icon name="filter" />
@@ -128,6 +132,11 @@ export function TargetsScreen({ targets, selectedId, onAction, onFeedback, onTar
           )}>
             {(close) => (
               <div className="filters">
+                <Field label="Sort by" htmlFor="filter-sort">
+                  <Select id="filter-sort" value={sort} onChange={(event) => setSort(event.target.value as Sort)}>
+                    <option value="score">Best match</option><option value="newest">Newest</option><option value="agentic">Agentic focus</option>
+                  </Select>
+                </Field>
                 <Field label="Work mode">
                   <Segmented label="Work mode" full value={(query.workMode ?? "") as string} onChange={(value) => updateQuery("workMode", value)}
                     options={[{ value: "", label: "Any" }, { value: "remote", label: "Remote" }, { value: "hybrid", label: "Hybrid" }, { value: "onsite", label: "On-site" }]} />
@@ -166,14 +175,16 @@ export function TargetsScreen({ targets, selectedId, onAction, onFeedback, onTar
           </Popover>
         } />
         <div className="split-tools">
-          <SearchField label="Search targets" value={query.search ?? ""} onChange={(value) => updateQuery("search", value)} placeholder="Search title, company, place" />
-          <Segmented label="Sort targets" full value={sort} onChange={setSort}
-            options={[{ value: "score", label: "Best match" }, { value: "newest", label: "Newest" }, { value: "agentic", label: "Agentic" }]} />
+          <Segmented label="Which targets" full value={scope} onChange={(value) => { setScope(value); setLimit(PAGE); }}
+            options={[{ value: "email", label: "Email apply", count: emailCount }, { value: "all", label: "All targets", count: allCount }]} />
+          <SearchField label="Search targets" value={query.search ?? ""} onChange={(value) => updateQuery("search", value)} placeholder="Search title, company, place, email" />
         </div>
         <div className="split-scroll">
           {hidden ? <HiddenNote job={hidden} onSave={(note) => onFeedback(hidden, "dislike", note)} onClose={() => setHidden(null)} /> : null}
           {filtered.length === 0 ? (
-            <EmptyState compact title="No targets match" description="Widen the filters, or wait for the next crawl." action={filterCount ? <Button onClick={resetFilters}>Reset filters</Button> : undefined} />
+            <EmptyState compact title={scope === "email" ? "No email targets match" : "No targets match"}
+              description={scope === "email" ? "Only listings that state a real apply address show here. Widen the filters, or see all targets." : "Widen the filters, or wait for the next crawl."}
+              action={scope === "email" ? <Button onClick={() => setScope("all")}>Show all targets</Button> : filterCount ? <Button onClick={resetFilters}>Reset filters</Button> : undefined} />
           ) : (
             <div className="target-groups">
               {grouped.map(({ group, jobs }) => (
@@ -209,8 +220,11 @@ function TargetRow({ job, index, active, leaving }: { job: JobTarget; index: num
       <div className="target-item-inner">
         <ListRow className="target-row" href={`#/targets/${encodeURIComponent(job.id)}`} active={active}
           leading={<Monogram name={job.companyName} size={32} />}
-          title={job.title}
-          subtitle={<Meta parts={[job.companyName, placeLabel(job.location, job.country), modeShort(job), formatAge(postedIso(job))]} />}
+          title={<>{job.title}{job.newCompany ? <> <Badge tone="accent">New company</Badge></> : null}</>}
+          subtitle={<>
+            {isEmailJob(job) ? <span className="row-email"><Icon name="mail" size={12} />{job.applyEmail}</span> : null}
+            <Meta parts={[job.companyName, placeLabel(job.location, job.country), modeShort(job), formatAge(postedIso(job))]} />
+          </>}
           trailing={<ScoreRing score={job.score} size={28} />} />
       </div>
     </li>
@@ -278,12 +292,26 @@ function TargetDetail({ job: summary, desktop, onAction, onFeedback, onTargetUpd
   }, [copied]);
 
   const job: JobTarget = full ? { ...full, ...summary, jdText: full.jdText, contacts: full.contacts, decisions: full.decisions, tailoredCv: full.tailoredCv ?? null, aiEvidence: full.aiEvidence, languageEvidence: full.languageEvidence } : summary;
-  const contacts = job.contacts ?? [];
+  const contacts = [...(job.contacts ?? [])].sort((a, b) => Number(b.role === "apply") - Number(a.role === "apply"));
   const jd = useMemo(() => htmlToText(job.jdText), [job.jdText]);
+  const blocks = useMemo(() => jdBlocks(jd), [jd]);
+  // Collapsed, the description shows whole blocks up to about 900 characters; nothing is cut mid-line.
+  const shortCount = useMemo(() => {
+    let total = 0;
+    let count = 0;
+    for (const block of blocks) {
+      total += block.kind === "list" ? block.items.join(" ").length : block.text.length;
+      count += 1;
+      if (total > 900) break;
+    }
+    return Math.max(1, count);
+  }, [blocks]);
+  const shownBlocks = jdOpen ? blocks : blocks.slice(0, shortCount);
   const breakdown = { ...job.scoreBreakdown } as Record<string, number | null | undefined>;
   const lines = fitLines(breakdown);
   const liked = job.feedback === "like";
   const sponsors = job.sponsorship === "yes" || job.sponsorship === "registry_hit";
+  const emailJob = isEmailJob(job);
   const decisions = job.decisions ?? [];
   const evidence = (job.aiEvidence ?? []).filter((item) => item.quote && item.quote !== job.title);
 
@@ -316,7 +344,8 @@ function TargetDetail({ job: summary, desktop, onAction, onFeedback, onTargetUpd
     ["Posted", `${formatAge(postedIso(job))} ago`],
     ["Location", job.location || "Not stated"],
     ...(job.salary ? [["Salary", job.salary] as [string, ReactNode]] : []),
-    ["Source", hostOf(job.sourceUrl) || "Unknown"],
+    ...(job.newCompany ? [["Company", job.newCompanyQuote ? <span className="fact-quote">Early-stage: {"\u201C"}{htmlToText(job.newCompanyQuote)}{"\u201D"}</span> : "Early-stage"] as [string, ReactNode]] : []),
+    ["Found on", job.source || hostOf(job.sourceUrl) || "Unknown"],
     ["Verified", job.jevVerified ? "By Jev" : "Not yet. Sending waits for it."],
   ];
 
@@ -333,8 +362,8 @@ function TargetDetail({ job: summary, desktop, onAction, onFeedback, onTargetUpd
               <p><Meta parts={[job.companyName, placeLabel(job.location, job.country), modeShort(job), `${formatAge(postedIso(job))} ago`]} /></p>
             </div>
             <div className="detail-actions">
-              <Button variant="primary" icon="mail" busy={busy === "draft"} disabled={busy !== null} onClick={() => act("draft")}>{busy === "draft" ? "Drafting" : "Draft email"}</Button>
-              <Button icon="external" href={job.applyUrl || job.sourceUrl} target="_blank" rel="noopener noreferrer" onClick={() => { void onAction(job, "open"); }}>Apply</Button>
+              {emailJob ? null : <Button variant="primary" icon="mail" busy={busy === "draft"} disabled={busy !== null} onClick={() => act("draft")}>{busy === "draft" ? "Drafting" : "Draft email"}</Button>}
+              <Button icon="external" href={job.applyUrl || job.sourceUrl} target="_blank" rel="noopener noreferrer" onClick={() => { void onAction(job, "open"); }}>{emailJob ? "Open listing" : "Apply"}</Button>
               <IconButton icon="thumb" filled={liked} pressed={liked} label={liked ? "Remove like" : "Like, show more like this"} onClick={() => onFeedback(job, liked ? "clear" : "like")} />
               <IconButton icon="thumb" flip label="Dislike and hide" onClick={() => onFeedback(job, "dislike")} />
               <Popover label="More actions" align="end" panelClassName="ui-menu" trigger={(props) => (
@@ -350,6 +379,27 @@ function TargetDetail({ job: summary, desktop, onAction, onFeedback, onTargetUpd
               </Popover>
             </div>
           </header>
+
+          {emailJob && job.applyEmail ? (
+            <section className="ui-card apply-card" aria-label="Apply by email">
+              <div className="apply-main">
+                <span className="apply-label">Apply by email</span>
+                <span className="apply-address">
+                  <span className="break-all">{job.applyEmail}</span>
+                  <IconButton icon={copied === job.applyEmail ? "check" : "copy"} label={copied === job.applyEmail ? "Copied" : `Copy ${job.applyEmail}`} onClick={() => copy(job.applyEmail ?? "")} />
+                </span>
+                {job.applyQuote ? (
+                  <figure className="apply-proof">
+                    <blockquote>{"\u201C"}{htmlToText(job.applyQuote)}{"\u201D"}</blockquote>
+                    <figcaption>Found in the listing{job.source ? ` on ${job.source}` : ""}.{job.sourceUrl ? <> <a className="text-link" href={job.sourceUrl} target="_blank" rel="noopener noreferrer">See the source</a></> : null}</figcaption>
+                  </figure>
+                ) : null}
+              </div>
+              <div className="apply-action">
+                <Button variant="primary" icon="mail" busy={busy === "draft"} disabled={busy !== null} onClick={() => act("draft")}>{busy === "draft" ? "Drafting" : `Draft email to ${job.applyEmail}`}</Button>
+              </div>
+            </section>
+          ) : null}
 
           <div className="detail-body">
             <aside className="detail-rail" aria-label="Match summary">
@@ -380,7 +430,7 @@ function TargetDetail({ job: summary, desktop, onAction, onFeedback, onTargetUpd
                         <ListRow
                           leading={<Monogram name={contact.name || contact.email} size={32} />}
                           title={<span className="break-all">{contact.email}</span>}
-                          subtitle={<Meta parts={[contact.name, contactKindLabel(contact.kind), contact.jevVerdict === "verified" ? "Verified" : humanize(contact.jevVerdict)]} />}
+                          subtitle={<Meta parts={[contact.role === "apply" ? "Apply address" : contact.name, contactKindLabel(contact.kind), contact.jevVerdict === "verified" ? "Verified" : humanize(contact.jevVerdict)]} />}
                           trailing={<IconButton icon={copied === contact.email ? "check" : "copy"} label={copied === contact.email ? "Copied" : `Copy ${contact.email}`} onClick={() => copy(contact.email)} />} />
                       </li>
                     ))}
@@ -417,9 +467,16 @@ function TargetDetail({ job: summary, desktop, onAction, onFeedback, onTargetUpd
                 )}
               </Section>
 
-              <Section title="Job description" action={jd ? <Button variant="plain" icon={jdOpen ? "chevronDown" : "chevronRight"} onClick={() => setJdOpen((value) => !value)} aria-expanded={jdOpen}>{jdOpen ? "Show less" : "Show all"}</Button> : undefined}>
+              <Section title="Job description" action={jd && blocks.length > shortCount ? <Button variant="plain" icon={jdOpen ? "chevronDown" : "chevronRight"} onClick={() => setJdOpen((value) => !value)} aria-expanded={jdOpen}>{jdOpen ? "Show less" : "Show all"}</Button> : undefined}>
                 {loadError ? <p className="section-note">{loadError}</p> : null}
-                {jd ? <p className={`jd-text ${jdOpen ? "is-open" : ""}`}>{jd}</p> : <p className="section-note">{full ? "No description captured." : "Loading the description."}</p>}
+                {jd ? (
+                  <div className="jd">
+                    {shownBlocks.map((block, index) => block.kind === "heading" ? <h3 key={index}>{block.text}</h3>
+                      : block.kind === "list" ? <ul key={index}>{block.items.map((item, itemIndex) => <li key={itemIndex}>{item}</li>)}</ul>
+                      : <p key={index}>{block.text}</p>)}
+                    {!jdOpen && shortCount < blocks.length ? <Button variant="plain" onClick={() => setJdOpen(true)}>Show the full description</Button> : null}
+                  </div>
+                ) : <p className="section-note">{full ? "No description captured." : "Loading the description."}</p>}
                 {job.sourceUrl ? <Button variant="plain" icon="external" href={job.sourceUrl} target="_blank" rel="noopener noreferrer">Open the original listing</Button> : null}
               </Section>
 
@@ -428,7 +485,7 @@ function TargetDetail({ job: summary, desktop, onAction, onFeedback, onTargetUpd
                   <ul className="row-list is-boxed">
                     {decisions.map((decision) => (
                       <li key={decision.id}>
-                        <ListRow title={humanize(decision.decisionId)} subtitle={humanize(decision.verdict)}
+                        <ListRow title={humanize(decision.decisionId)} subtitle={humanize(decision.verdict.replace(/^"|"$/g, ""))}
                           trailing={<span className="tabular row-value">{Math.round(decision.confidence * 100)}%</span>} />
                       </li>
                     ))}
