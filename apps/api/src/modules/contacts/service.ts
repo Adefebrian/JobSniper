@@ -31,6 +31,8 @@ export function validatePublicContact(input: {
   }
 }
 
+import { searchRecruiterEmails } from "./recruiter-search";
+
 export class ContactsService {
   constructor(
     private readonly repository: ContactsRepository,
@@ -38,6 +40,33 @@ export class ContactsService {
     private readonly clock: Clock,
     private readonly ids: IdGenerator,
   ) {}
+
+  /** PRD 8.1 recruiter_search for one company per call (paced by the caller). */
+  async recruiterSearchOnce(): Promise<{ company?: string; found: number }> {
+    const company = await this.repository.nextCompanyToSearch();
+    if (!company) return { found: 0 };
+    await this.repository.markSearched(company.id);
+    const found = await searchRecruiterEmails(company.name);
+    let kept = 0;
+    for (const item of found) {
+      let verdict: unknown;
+      try {
+        const decision = await this.jev.decide({
+          decisionId: "contact_valid",
+          subjectType: "company",
+          subjectId: company.id,
+          input: { company: company.name, email: item.email, sourceUrl: item.sourceUrl, evidence: [{ quote: item.quote, source: item.sourceUrl, reason: "Public search result" }] },
+        });
+        verdict = decision.verdict;
+        if (decision.verdict.value === false) continue;
+      } catch {
+        verdict = undefined; // kept, labelled unverified until Jev is reachable
+      }
+      await this.repository.insertRecruiterContact(company.id, { ...item, verdict });
+      kept++;
+    }
+    return { company: company.name, found: kept };
+  }
 
   async listForJob(jobId: string) {
     return this.repository.listForJob(jobId);

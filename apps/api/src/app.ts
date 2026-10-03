@@ -58,6 +58,7 @@ export type ApiDependencies = {
 
 export type ApiRuntime = {
   brain: BrainService;
+  contacts: ContactsService;
   scheduler: SchedulerService;
   outreach: OutreachService;
 };
@@ -157,6 +158,7 @@ export function createApiApp(dependencies: ApiDependencies): Hono & ApiRuntime {
 
   const app = new Hono() as Hono & ApiRuntime;
   app.brain = brainService;
+  app.contacts = contactsService;
   app.scheduler = schedulerService;
   app.outreach = outreachService;
 

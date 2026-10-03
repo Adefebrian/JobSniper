@@ -6,6 +6,36 @@ type ContactRow = Record<string, unknown> & { id: string };
 export class ContactsRepository {
   constructor(private readonly database: Queryable) {}
 
+  /** Next company with a target but no usable email, not searched before. */
+  async nextCompanyToSearch(): Promise<{ id: string; name: string } | undefined> {
+    const result = await this.database.query<{ id: string; name: string }>(
+      `SELECT c.id, c.name FROM companies c
+       WHERE c.recruiter_searched_at IS NULL AND c.discovered_via <> 'feed_holder'
+         AND EXISTS (SELECT 1 FROM jobs j WHERE j.company_id = c.id AND j.status = 'targeted' AND j.closed_at IS NULL
+                       AND NOT EXISTS (SELECT 1 FROM contacts x WHERE x.job_id = j.id AND x.invalid_at IS NULL))
+       ORDER BY (SELECT max(j.score) FROM jobs j WHERE j.company_id = c.id AND j.status = 'targeted') DESC NULLS LAST
+       LIMIT 1`,
+    );
+    return result.rows[0];
+  }
+
+  async markSearched(companyId: string): Promise<void> {
+    await this.database.query("UPDATE companies SET recruiter_searched_at = now() WHERE id = $1", [companyId]);
+  }
+
+  /** Files a found email under every open target of the company that has no email yet. */
+  async insertRecruiterContact(companyId: string, c: { email: string; quote: string; sourceUrl: string; verdict: unknown }) {
+    await this.database.query(
+      `INSERT INTO contacts (id, company_id, job_id, email, kind, source_url, source_quote, jev_verdict)
+       SELECT gen_random_uuid(), j.company_id, j.id, $2, 'recruiter_search', $3, $4, $5::jsonb
+       FROM jobs j
+       WHERE j.company_id = $1 AND j.status = 'targeted' AND j.closed_at IS NULL
+         AND NOT EXISTS (SELECT 1 FROM do_not_contact d WHERE d.email_or_domain IN ($2, split_part($2, '@', 2)))
+       ON CONFLICT DO NOTHING`,
+      [companyId, c.email, c.sourceUrl, c.quote, c.verdict === undefined ? null : JSON.stringify(c.verdict)],
+    );
+  }
+
   async jobExists(jobId: string): Promise<boolean> {
     const result = await this.database.query("SELECT 1 FROM jobs WHERE id = $1", [jobId]);
     return result.rowCount > 0;

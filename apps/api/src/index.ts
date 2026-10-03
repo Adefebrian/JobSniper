@@ -43,6 +43,8 @@ const app = createApiApp({
 
 mountSpa(app, process.env.JOBSNIPER_WEB_DIST ?? resolve(import.meta.dir, "../../web/dist"));
 
+let nextSendAt = 0;
+let nextSearchAt = 0;
 const maintenance = new RuntimeMaintenance({
   catchUp: async () => {
     await app.scheduler.runDueCatchUp();
@@ -52,8 +54,27 @@ const maintenance = new RuntimeMaintenance({
       const { judged } = await app.brain.processQueue(25);
       if (judged === 0) break;
     }
+    // One public-email search per company every 45 s for targets that have no email (PRD 8.1).
+    if (Date.now() >= nextSearchAt) {
+      nextSearchAt = Date.now() + 45_000;
+      await app.contacts.recruiterSearchOnce().catch((error) => console.error("recruiter search:", error));
+    }
+    // Approved emails go out one at a time with a random 4 to 12 minute gap (PRD 8.3);
+    // sendDue itself enforces the recipient's work window and the daily cap.
+    if (Date.now() >= nextSendAt) {
+      const results = await app.outreach.sendDue(1);
+      if (results.some((r) => (r as { status?: string }).status === "sent")) {
+        nextSendAt = Date.now() + (4 + Math.random() * 8) * 60_000;
+      }
+    }
   },
-  trackReplies: () => app.outreach.trackReplies(),
+  trackReplies: async () => {
+    await app.outreach.trackReplies();
+    // One follow-up draft per unanswered email after 6 days; it still waits for Brian's approval.
+    for (const due of await app.outreach.followupsDue()) {
+      await app.outreach.createFollowup(String(due.id)).catch(() => undefined);
+    }
+  },
   onError: (error) => console.error("JobSniper maintenance failed:", error),
 });
 maintenance.start();
