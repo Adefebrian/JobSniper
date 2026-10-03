@@ -122,6 +122,7 @@ function Connections({ onImported }: { onImported: () => Promise<void> }) {
   const [message, setMessage] = useState<{ tone: "success" | "warning"; text: string } | null>(null);
   const [cvPath, setCvPath] = useState(DEFAULT_CV_PATH);
   const [importing, setImporting] = useState(false);
+  const [extracted, setExtracted] = useState<Record<string, unknown> | null>(null);
 
   const refresh = useCallback(async () => {
     try {
@@ -160,9 +161,10 @@ function Connections({ onImported }: { onImported: () => Promise<void> }) {
     if (!cvPath.trim()) return;
     setImporting(true);
     try {
-      await api.importProfileFile(cvPath.trim());
+      const result = await api.importCv(cvPath.trim());
+      setExtracted(result?.profile ?? null);
       await onImported();
-      setMessage({ tone: "success", text: "CV imported. The profile below was reloaded." });
+      setMessage({ tone: "success", text: "CV imported. It is stored for tailoring, and the profile was extracted below." });
     } catch (caught) {
       setMessage({ tone: "warning", text: errorText(caught, "The CV could not be imported.") });
     } finally {
@@ -201,6 +203,14 @@ function Connections({ onImported }: { onImported: () => Promise<void> }) {
             </label>
           </form>
         </li>
+        {extracted ? (
+          <li className="row connection-row">
+            <div className="row-main">
+              <strong>Extracted from your CV</strong>
+              <ExtractedProfile profile={extracted} />
+            </div>
+          </li>
+        ) : null}
       </ul>
     </SettingsSection>
   );
@@ -232,5 +242,39 @@ function SecretRow({ name, label, help, isSet, onSave }: { name: ConnectionName;
         </div>
       </form>
     </li>
+  );
+}
+
+const isText = (value: unknown): value is string | number => typeof value === "string" || typeof value === "number";
+const labelFor = (key: string) => {
+  const text = key.replace(/([a-z])([A-Z])/g, "$1 $2").replace(/_/g, " ").trim();
+  return text.charAt(0).toUpperCase() + text.slice(1).toLowerCase();
+};
+const describe = (value: unknown): string => {
+  if (isText(value)) return String(value);
+  if (Array.isArray(value)) return value.map(describe).filter(Boolean).join(", ");
+  if (value && typeof value === "object") return Object.values(value as Record<string, unknown>).map(describe).filter(Boolean).join(", ");
+  return "";
+};
+
+/** Shows whatever the parser extracted: short lists as pills, long ones as lines, text as text. */
+function ExtractedProfile({ profile }: { profile: Record<string, unknown> }) {
+  const entries = Object.entries(profile).filter(([, value]) => value !== null && value !== "" && !(Array.isArray(value) && value.length === 0));
+  if (entries.length === 0) return <p className="muted">Nothing could be extracted.</p>;
+  return (
+    <dl className="extracted">
+      {entries.map(([key, value]) => (
+        <div key={key}>
+          <dt>{labelFor(key)}</dt>
+          <dd>
+            {Array.isArray(value) && value.every(isText) && value.every((item) => String(item).length <= 40) ? (
+              <span className="tags">{value.map((item) => <span className="tag" key={String(item)}>{String(item)}</span>)}</span>
+            ) : Array.isArray(value) ? (
+              <ul className="plain-list">{value.map((item, index) => <li key={index}>{describe(item)}</li>)}</ul>
+            ) : <span>{describe(value)}</span>}
+          </dd>
+        </div>
+      ))}
+    </dl>
   );
 }

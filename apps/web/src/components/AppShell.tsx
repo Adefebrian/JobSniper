@@ -12,12 +12,27 @@ export const routes = [
 interface Props {
   route: string;
   status: StatusData;
+  counts: Partial<Record<string, number>>;
   children: ReactNode;
 }
 
-export function AppShell({ route, status, children }: Props) {
+export function AppShell({ route, status, counts, children }: Props) {
   return (
     <div className="app-shell">
+      <aside className="sidebar" aria-label="Sidebar" data-tauri-drag-region>
+        <div className="sidebar-top" data-tauri-drag-region>
+          <a className="brand" href="#/targets" aria-label="JobSniper home"><strong>JobSniper</strong></a>
+        </div>
+        <nav className="side-nav" aria-label="Primary navigation">
+          {routes.map((item) => (
+            <a key={item.id} href={item.href} className={route === item.id ? "active" : undefined} aria-current={route === item.id ? "page" : undefined}>
+              <span className="side-nav-label">{item.label}</span>
+              {counts[item.id] !== undefined ? <span className="side-nav-count tabular">{counts[item.id]}</span> : null}
+            </a>
+          ))}
+        </nav>
+        <StatusStrip status={status} variant="stack" />
+      </aside>
       <header className="topbar" data-tauri-drag-region>
         <a className="brand" href="#/targets" aria-label="JobSniper home"><strong>JobSniper</strong></a>
         <nav className="top-nav" aria-label="Primary navigation" data-tauri-drag-region>

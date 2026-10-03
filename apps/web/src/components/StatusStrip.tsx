@@ -1,7 +1,7 @@
 import { formatAgo } from "../utils.ts";
 import type { StatusStrip as StatusData } from "../types.ts";
 
-export function StatusStrip({ status }: { status: StatusData }) {
+export function StatusStrip({ status, variant = "strip" }: { status: StatusData; variant?: "strip" | "stack" }) {
   const items = [
     { label: "T1 run", value: formatAgo(status.lastRunT1) },
     { label: "T2 run", value: formatAgo(status.lastRunT2) },
@@ -11,7 +11,7 @@ export function StatusStrip({ status }: { status: StatusData }) {
     { label: "Blocked", value: String(status.blockedSources), warn: status.blockedSources > 0 },
   ];
   return (
-    <section className="status-strip" aria-label="System status" data-tauri-drag-region>
+    <section className={variant === "stack" ? "status-stack" : "status-strip"} aria-label="System status" data-tauri-drag-region>
       <dl data-tauri-drag-region>
         {items.map((item) => (
           <div key={item.label} className={item.warn ? "status-item is-warn" : "status-item"} data-tauri-drag-region>

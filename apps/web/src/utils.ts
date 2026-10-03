@@ -148,3 +148,50 @@ export const downloadBlob = (blob: Blob, fileName: string) => {
   anchor.click();
   URL.revokeObjectURL(url);
 };
+
+export const seniorityLabel = (value: JobTarget["seniority"] | string | null | undefined) => {
+  if (value === "early") return "Junior";
+  if (value === "mid") return "Mid-level";
+  if (value === "senior") return "Senior";
+  if (value === "lead") return "Lead";
+  return "Level unknown";
+};
+
+/** agenticFocus is 0..1: how much of the role is AI-assisted or agentic work. */
+export const agenticLabel = (value: number | null | undefined) => {
+  if (value === null || value === undefined) return null;
+  const pct = toPercent(value);
+  if (pct >= 70) return `Agentic focus high`;
+  if (pct >= 40) return `Agentic focus some`;
+  return `Agentic focus low`;
+};
+
+export const FIT_LABELS: Record<string, string> = {
+  roleFit: "Role fit",
+  seniority: "Seniority",
+  modeVisa: "Work mode and visa",
+  freshness: "Freshness",
+  skillOverlapCv: "Skill overlap with your CV",
+  agenticFocus: "Agentic focus",
+  preferenceFit: "Fit with your likes",
+};
+
+export const fitWord = (pct: number) => pct >= 75 ? "Strong" : pct >= 50 ? "Partial" : "Weak";
+
+/** One plain sentence naming the strongest and weakest score parts. */
+export const fitSummary = (breakdown: Record<string, number | null | undefined>) => {
+  const parts = Object.entries(breakdown)
+    .filter((entry): entry is [string, number] => typeof entry[1] === "number")
+    .map(([key, value]) => ({ label: lowerFirst(FIT_LABELS[key] ?? humanize(key)), pct: toPercent(value) }));
+  if (parts.length === 0) return "No score breakdown yet.";
+  const strong = parts.filter((part) => part.pct >= 75).map((part) => part.label);
+  const weak = parts.filter((part) => part.pct < 50).map((part) => part.label);
+  const sentences: string[] = [];
+  if (strong.length) sentences.push(`Strong on ${joinWords(strong)}.`);
+  if (weak.length) sentences.push(`Weak on ${joinWords(weak)}.`);
+  if (!sentences.length) sentences.push("A middling fit on every part.");
+  return sentences.join(" ");
+};
+
+const lowerFirst = (text: string) => text.charAt(0).toLowerCase() + text.slice(1);
+const joinWords = (words: string[]) => words.length <= 1 ? words.join("") : `${words.slice(0, -1).join(", ")} and ${words[words.length - 1]}`;

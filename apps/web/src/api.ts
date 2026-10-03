@@ -1,4 +1,4 @@
-import type { ApiEnvelope, ConnectionName, Connections, DashboardData, JobAction, JobTarget, Outreach, OutboxAction, Profile, Source, TargetsQuery } from "./types.ts";
+import type { ApiEnvelope, ConnectionName, Connections, CvImportResult, DashboardData, JobAction, JobTarget, Outreach, OutboxAction, Profile, Source, TargetsQuery } from "./types.ts";
 
 const API_BASE = "/api";
 
@@ -75,10 +75,16 @@ export const saveConnection = (name: ConnectionName, value: string) => request<{
 });
 export const GMAIL_CONNECT_URL = `${API_BASE}/gmail/connect`;
 export const disconnectGmail = () => request<{ connected: boolean }>("/gmail/disconnect", { method: "POST" });
-export const importProfileFile = (path: string) => request<unknown>("/profile/import-file", {
+export const importCv = (path: string) => request<CvImportResult>("/cv/import", {
   method: "POST",
   body: JSON.stringify({ path }),
 });
+export const sendFeedback = (id: string, verdict: "like" | "dislike" | "clear", note?: string) => request<JobTarget>(`/targets/${encodeURIComponent(id)}/feedback`, {
+  method: "POST",
+  body: JSON.stringify(note ? { verdict, note } : { verdict }),
+});
+export const tailorCv = (id: string) => request<JobTarget>(`/targets/${encodeURIComponent(id)}/tailor-cv`, { method: "POST" });
+export const tailoredCvUrl = (id: string) => `${API_BASE}/targets/${encodeURIComponent(id)}/tailored-cv`;
 export const exportData = async (kind: "targets" | "outreach", format: "csv" | "xlsx") => {
   const response = await fetch(`${API_BASE}/export?kind=${kind}&format=${format}`, { credentials: "same-origin" });
   if (!response.ok) {

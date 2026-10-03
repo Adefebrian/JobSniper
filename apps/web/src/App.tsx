@@ -6,8 +6,8 @@ import { CompaniesSourcesScreen } from "./screens/CompaniesSourcesScreen.tsx";
 import { OutreachScreen } from "./screens/OutreachScreen.tsx";
 import { SettingsScreen } from "./screens/SettingsScreen.tsx";
 import { TargetsScreen } from "./screens/TargetsScreen.tsx";
-import { downloadBlob } from "./utils.ts";
-import type { DashboardData, JobAction, JobTarget, Outreach, OutboxAction, Profile, Source } from "./types.ts";
+import { downloadBlob, filterTargets } from "./utils.ts";
+import type { DashboardData, Feedback, JobAction, JobTarget, Outreach, OutboxAction, Profile, Source } from "./types.ts";
 
 type AppRoute = "targets" | "outreach" | "companies" | "settings";
 
@@ -81,6 +81,17 @@ export function App() {
     if (action === "draft") void loadData();
   }, "Target action failed.");
 
+  const mergeTarget = (updated: JobTarget) => setData((current) => ({
+    ...current,
+    targets: current.targets.map((item) => item.id === updated.id ? { ...item, ...updated, contacts: updated.contacts ?? item.contacts } : item),
+  }));
+
+  const onFeedback = (job: JobTarget, verdict: Feedback | "clear", note?: string) => run(async () => {
+    mergeTarget(await api.sendFeedback(job.id, verdict, note));
+    // Feedback re-scores the top targets on the server; pick the new order up quietly.
+    void loadData();
+  }, "Feedback was not saved.");
+
   const onOutreachAction = (item: Outreach, action: OutboxAction) => run(async () => {
     const updated = await api.updateOutreach(item.id, action);
     setData((current) => ({ ...current, outreach: current.outreach.map((entry) => entry.id === updated.id ? updated : entry) }));
@@ -126,13 +137,17 @@ export function App() {
   const { route, id } = location;
   let screen;
   if (!loaded) screen = <LoadingState />;
-  else if (route === "targets") screen = <TargetsScreen targets={data.targets} selectedId={id} onAction={onJobAction} onExport={(format) => onExport("targets", format)} />;
+  else if (route === "targets") screen = <TargetsScreen targets={data.targets} selectedId={id} onAction={onJobAction} onFeedback={onFeedback} onTargetUpdate={mergeTarget} onExport={(format) => onExport("targets", format)} />;
   else if (route === "outreach") screen = <OutreachScreen outreach={data.outreach} dailyCap={data.settings.dailyCap} onAction={onOutreachAction} onExport={(format) => onExport("outreach", format)} />;
   else if (route === "companies") screen = <CompaniesSourcesScreen companies={data.companies} sources={data.sources} onCompanyAction={onCompanyAction} onSourceAction={onSourceAction} onAddCompany={onAddCompany} onAddSource={onAddSource} />;
   else screen = <SettingsScreen settings={data.settings} onSave={onSaveSettings} onReloadSettings={onReloadSettings} />;
 
   return (
-    <AppShell route={route} status={data.status}>
+    <AppShell route={route} status={data.status} counts={{
+      targets: filterTargets(data.targets, {}).length,
+      outreach: data.outreach.filter((item) => item.status === "draft" || item.status === "followup_due").length,
+      companies: data.companies.length,
+    }}>
       <div className={route === "targets" ? "page page-split" : "page"}>
         {error ? <Notice tone="warning" title="API problem">{error}</Notice> : null}
         {screen}

@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 
 export function PageHeader({ title, description, actions }: { title: string; description?: string; actions?: ReactNode }) {
   return (
-    <header className="page-header">
+    <header className="page-header" data-tauri-drag-region>
       <div className="page-header-text">
         <h1>{title}</h1>
         {description ? <p>{description}</p> : null}

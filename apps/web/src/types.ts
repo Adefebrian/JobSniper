@@ -11,6 +11,30 @@ export interface Evidence {
   context?: string;
 }
 
+export type Feedback = "like" | "dislike";
+
+export interface TailoredCvContent {
+  name: string;
+  headline: string;
+  contact: string[];
+  summary: string;
+  skills: string[];
+  experience: { role: string; company: string; period: string; bullets: string[] }[];
+  projects: { name: string; bullets: string[] }[];
+  education: string[];
+  changes: string[];
+}
+
+export interface TailoredCv {
+  fileName: string;
+  createdAt: string;
+  content: TailoredCvContent;
+}
+
+export interface CvImportResult {
+  profile: Record<string, unknown>;
+}
+
 export interface Contact {
   id: string;
   name: string;
@@ -55,7 +79,9 @@ export interface JobTarget {
   applyUrl: string;
   status: JobStatus;
   score: number;
-  scoreBreakdown: { roleFit: number; seniority: number; modeVisa: number; freshness: number; skillOverlapCv: number };
+  scoreBreakdown: { roleFit: number; seniority: number; modeVisa: number; freshness: number; skillOverlapCv: number; agenticFocus?: number | null; preferenceFit?: number | null };
+  feedback?: Feedback | null;
+  tailoredCv?: TailoredCv | null;
   aiEvidence: Evidence[];
   languageEvidence: Evidence[];
   translated: boolean;
