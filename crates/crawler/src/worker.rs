@@ -197,6 +197,19 @@ where
             .registry
             .fetch_page(&self.http, &request, payload.method.as_deref(), None)
             .await?;
+        let multi_company = request.config.get("multi_company").and_then(Value::as_bool) == Some(true);
+        let close_missing = request.config.get("close_missing").and_then(Value::as_bool) == Some(true);
+        if let Some(separator) = request.config.get("title_company_separator").and_then(Value::as_str) {
+            // "Samsara: Staff Software Engineer" (We Work Remotely) -> company + title
+            for job in &mut page.jobs {
+                if job.company.is_none() {
+                    if let Some((company, title)) = job.title.split_once(separator) {
+                        job.company = Some(company.trim().to_owned());
+                        job.title = title.trim().to_owned();
+                    }
+                }
+            }
+        }
         let external_id = payload.external_id.clone();
         for job in &mut page.jobs {
             if job.external_id.is_none() {
@@ -251,6 +264,8 @@ where
                 })
                 .collect(),
             ats_indicators: Vec::new(),
+            multi_company,
+            close_missing,
         };
         let discovered = page.discovered_urls.len();
         Ok((
@@ -281,6 +296,8 @@ where
             emails: extracted.emails,
             links: extracted.links,
             ats_indicators: extracted.ats_indicators.into_iter().collect(),
+            multi_company: false,
+            close_missing: false,
         };
         let links = artifact.links.len();
         Ok((ProcessingOutcome::Discovered { links }, Some(artifact)))

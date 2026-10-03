@@ -1,28 +1,52 @@
 import { createHash } from "node:crypto";
-import { ApiError } from "../../core/http";
-import type { DecisionInput, Evidence, JobStatus, Settings } from "../../core/domain";
+import { ApiError } from "@core/http";
+import { JEV_QUESTIONS, toVerdict } from "@core/adapters/jev";
+import type { DecisionInput, Evidence, JobStatus, Settings } from "@core/domain";
 import type { Clock, IdGenerator, JevPort, LunaPort } from "./ports";
-import { groundedEvidenceValid, judgeJob, monthlyBudgetAllows, scoreJob } from "./judging";
+import { judgeJob, monthlyBudgetAllows, scoreJob, type Judgment } from "./judging";
+import { parseLocation, workModeOf } from "./location";
 import { prefilterJob } from "./prefilter";
 import { BrainRepository, type JobRow } from "./repo";
 
 const DECISIONS = ["role_relevance", "language_fit", "remote_scope", "sponsorship", "seniority"] as const;
+type DecisionKey = (typeof DECISIONS)[number];
+const JUDGE_QUESTIONS = Object.fromEntries(DECISIONS.map((d) => [d, JEV_QUESTIONS[d]]));
+const RETRY_MINUTES = 15;
 
 function digest(value: unknown): string {
   return createHash("sha256").update(JSON.stringify(value)).digest("hex");
 }
 
-function jobString(row: JobRow, key: string, fallback = ""): string {
-  return typeof row[key] === "string" ? row[key] : fallback;
-}
-
-function jobArray(row: JobRow, key: string): string[] {
-  return Array.isArray(row[key]) ? row[key] as string[] : [];
+function str(row: JobRow, key: string, fallback = ""): string {
+  return typeof row[key] === "string" ? (row[key] as string) : fallback;
 }
 
 function evidenceArray(row: JobRow, key: string): Evidence[] {
-  return Array.isArray(row[key]) ? row[key] as Evidence[] : [];
+  return Array.isArray(row[key]) ? (row[key] as Evidence[]) : [];
 }
+
+function isoDate(value: unknown): string | null {
+  if (value instanceof Date) return value.toISOString();
+  return typeof value === "string" ? value : null;
+}
+
+/** PRD 7.4 skill factor: neutral 0.75 with no profile, else 0.5 + 0.5 * matched/8 (capped). */
+export function skillFactor(skills: string[], jdText: string): { factor: number; matched: string[] } {
+  const clean = skills.map((s) => s.trim()).filter((s) => s.length > 1).slice(0, 30);
+  if (clean.length === 0) return { factor: 0.75, matched: [] };
+  const escape = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const matched = clean.filter((s) => new RegExp(`(^|[^\\w])${escape(s)}($|[^\\w])`, "i").test(jdText));
+  return { factor: 0.5 + 0.5 * Math.min(1, matched.length / 8), matched };
+}
+
+type Verdicts = {
+  roleRelevance: number;
+  languageFit: number;
+  remoteScope: Judgment["remoteScope"]["value"];
+  sponsorship: Judgment["sponsorship"]["value"];
+  seniority: Judgment["seniority"]["value"] | "graduate";
+  verifiedByJev: boolean;
+};
 
 export type JobFilters = {
   status?: string | undefined;
@@ -62,132 +86,191 @@ export class BrainService {
     };
   }
 
+  /** Brain loop: judges every job that is new, retry-due, or still waiting for Jev. */
+  async processQueue(limit = 25): Promise<{ judged: number }> {
+    const ids = await this.repository.judgeQueue(limit);
+    for (const id of ids) {
+      try {
+        await this.judgeOne(id);
+      } catch (error) {
+        await this.repository.park(id, "unverified", `Judge failed: ${(error as Error).message}`.slice(0, 500), RETRY_MINUTES);
+      }
+    }
+    return { judged: ids.length };
+  }
+
   async judge(id: string): Promise<Record<string, unknown>> {
+    await this.judgeOne(id);
+    return this.getJob(id);
+  }
+
+  private async judgeOne(id: string): Promise<void> {
     const row = await this.repository.getJob(id);
     if (!row) throw new ApiError(404, "job_not_found", "Job was not found.");
-    const title = jobString(row, "title");
-    const jdText = jobString(row, "jd_text");
+    const title = str(row, "title");
+    const jdText = str(row, "jd_text");
+    const location = str(row, "location");
+    const settings = await this.getSettings();
+
+    if (row.company_blacklisted === true) {
+      await this.repository.updateJudgment({
+        id, status: "blacklisted", aiEvidence: [], languageEvidence: [], score: 0,
+        scoreBreakdown: emptyBreakdown(), skipReason: "Company is blacklisted.", jevVerified: true,
+      });
+      return;
+    }
+    const loc = parseLocation(location);
+    const workMode = workModeOf(location, jdText);
+    await this.repository.updateMeta(id, { countries: loc.countries, workMode });
+
     const prefilter = prefilterJob({ title, jdText });
     if (!prefilter.pass) {
-      await this.recordDecision("role_relevance", id, {
-        title,
-        excerpt: jdText.slice(0, 2_000),
-        evidence: prefilter.evidence,
-      }, {
-        value: "irrelevant",
-        reason: prefilter.reason ?? "Prefilter rejected",
-      }, 0.99);
       await this.repository.updateJudgment({
         id,
         status: "skipped",
-        aiEvidence: prefilter.evidence,
-        languageEvidence: prefilter.languageEvidence,
+        aiEvidence: [],
+        languageEvidence: [],
         score: 0,
-        scoreBreakdown: {
-          roleFit: 0,
-          seniorityWeight: 0,
-          modeVisaWeight: 0,
-          freshnessWeight: 0,
-          skillOverlap: 0,
-          countryWeight: 0,
-          rawProduct: 0,
-          score: 0,
-        },
+        scoreBreakdown: emptyBreakdown(),
         skipReason: prefilter.reason ?? "Prefilter rejected",
+        jevVerified: true,
       });
-      return this.getJob(id);
+      return;
     }
 
-    const settings = await this.getSettings();
     const spent = await this.repository.monthlySpend(this.clock.now());
-    const estimated = 0.05;
-    if (!monthlyBudgetAllows(spent, estimated, settings.monthlyLlmCapUsd)) {
-      await this.repository.updatePending(id, "pending_judge", "Monthly LLM budget cap reached.");
-      throw new ApiError(429, "llm_budget_cap", "Monthly LLM budget cap reached; crawling continues.");
+    if (!monthlyBudgetAllows(spent, 0.02, settings.monthlyLlmCapUsd)) {
+      await this.repository.park(id, "pending_judge", "Monthly LLM budget cap reached; crawling continues.", 60);
+      return;
     }
 
-    let translatedText = jdText;
-    if (prefilter.language === "non_english") {
-      const extraction = await this.luna.extractJob({
-        title,
-        jdText,
-        language: prefilter.language,
-      });
+    // Non-English JDs that mention English are translated once, then judged in English.
+    let englishText = str(row, "jd_text_english") || jdText;
+    if (prefilter.language === "non_english" && !str(row, "jd_text_english")) {
+      const extraction = await this.luna.extractJob({ title, jdText, language: prefilter.language });
       await this.repository.insertUsage(this.ids.newId(), extraction.usage);
-      if (!groundedEvidenceValid(extraction.result.evidence, `${title}\n${jdText}`)) {
-        await this.repository.updatePending(id, "unverified", "Translation/extraction evidence is not grounded.");
-        throw new ApiError(502, "ungrounded_extraction", "Extracted job evidence does not quote the source.");
-      }
-      translatedText = extraction.result.jdTextEnglish;
+      englishText = extraction.result.jdTextEnglish || jdText;
+      await this.repository.setEnglishText(id, englishText);
     }
 
-    const local = judgeJob({
-      title,
-      jdText: translatedText,
-      countries: jobArray(row, "countries"),
-      workMode: jobString(row, "work_mode", "unknown") as "remote" | "hybrid" | "onsite" | "unknown",
-      postedAt: typeof row.posted_at === "string" ? row.posted_at : null,
-    }, prefilter.evidence, prefilter.languageEvidence);
+    const local = judgeJob(
+      { title, jdText: englishText, countries: loc.countries, workMode, postedAt: isoDate(row.posted_at) },
+      prefilter.evidence,
+      prefilter.languageEvidence,
+    );
+    const verdicts = await this.verdicts(id, title, str(row, "company_name") || "", location, englishText, prefilter, local);
 
-    for (const decisionId of DECISIONS) {
-      const localDecision =
-        decisionId === "role_relevance" ? local.roleRelevance :
-        decisionId === "language_fit" ? local.languageFit :
-        decisionId === "remote_scope" ? local.remoteScope :
-        decisionId === "sponsorship" ? local.sponsorship :
-        local.seniority;
-      const input: DecisionInput = {
-        title,
-        jdText: translatedText.slice(0, 12_000),
-        evidence: localDecision.evidence,
-      };
-      try {
-        const decision = await this.jev.decide({
-          decisionId,
-          subjectType: "job",
-          subjectId: id,
-          input,
-        });
-        await this.recordDecision(decisionId, id, input, {
-          value: localDecision.value,
-          jevValue: decision.verdict.value,
-        }, Math.min(decision.confidence, localDecision.confidence));
-      } catch (error) {
-        await this.repository.updatePending(id, "unverified", `Jev ${decisionId} failed.`);
-        throw error;
-      }
-    }
+    const reject =
+      verdicts.seniority === "graduate" ? "Graduate or internship level."
+      : verdicts.roleRelevance < 0.5 ? "Jev: not an AI software engineering role."
+      : verdicts.languageFit < 0.5 ? "Jev: needs a language other than English (or is nationality restricted)."
+      : null;
 
-    const countryKey = jobArray(row, "countries")[0] ?? "other";
-    const countryWeight = settings.countries[countryKey] ?? settings.countries.other ?? 0.5;
+    const skills = Array.isArray(settings.profile.skills) ? settings.profile.skills.map(String) : [];
+    const skill = skillFactor(skills, englishText);
+    const countryKey = loc.countries.find((c) => c in settings.countries) ?? "other";
     const breakdown = scoreJob({
-      roleFit: local.roleRelevance.value === "relevant" ? 1 : 0,
-      seniority: local.seniority.value,
-      remoteScope: local.remoteScope.value,
-      sponsorship: local.sponsorship.value,
-      postedAt: typeof row.posted_at === "string" ? row.posted_at : null,
-      skillOverlap: this.skillOverlap(settings.profile, translatedText),
-      countryWeight,
+      roleFit: verdicts.roleRelevance,
+      seniority: verdicts.seniority === "graduate" ? "unknown" : verdicts.seniority,
+      remoteScope: verdicts.remoteScope,
+      sponsorship: verdicts.sponsorship,
+      postedAt: isoDate(row.posted_at) ?? isoDate(row.first_seen_at),
+      skillOverlap: skill.factor,
+      countryWeight:
+        verdicts.remoteScope === "remote_global" || verdicts.remoteScope === "remote_apac"
+          ? 1
+          : settings.countries[countryKey] ?? settings.countries.other ?? 0.5,
       now: this.clock.now(),
       weights: settings.scoringWeights,
     });
-    const languagePass = local.languageFit.value === "pass";
-    const rolePass = local.roleRelevance.value === "relevant";
-    const status: JobStatus = languagePass && rolePass ? "targeted" : "skipped";
+    await this.repository.updateClassification(id, {
+      remoteScope: verdicts.remoteScope,
+      sponsorship: verdicts.sponsorship,
+      seniority: verdicts.seniority === "graduate" ? "unknown" : verdicts.seniority,
+      language: prefilter.language,
+    });
     await this.repository.updateJudgment({
       id,
-      status,
+      status: reject ? "skipped" : "targeted",
       aiEvidence: prefilter.evidence,
       languageEvidence: prefilter.languageEvidence,
-      score: breakdown.score,
-      scoreBreakdown: breakdown,
-      skipReason: status === "targeted"
-        ? null
-        : !languagePass
-          ? "Working language requirements failed."
-          : "Role relevance failed.",
+      score: reject ? 0 : breakdown.score,
+      scoreBreakdown: { ...breakdown, skillsMatched: skill.matched, jevVerified: verdicts.verifiedByJev } as never,
+      skipReason: reject,
+      jevVerified: verdicts.verifiedByJev,
     });
-    return this.getJob(id);
+    if (!reject) await this.saveContacts(id, title, jdText);
+    if (!verdicts.verifiedByJev) {
+      // Shown with an "unverified" label, retried, and never sendable until Jev confirms (PRD 11).
+      await this.repository.scheduleRejudge(id, RETRY_MINUTES);
+    }
+  }
+
+  /** Jev decides; the local rules only stand in (marked unverified) when Jev is unreachable. */
+  private async verdicts(
+    id: string,
+    title: string,
+    company: string,
+    location: string,
+    jdText: string,
+    prefilter: ReturnType<typeof prefilterJob>,
+    local: Judgment,
+  ): Promise<Verdicts> {
+    const state = {
+      job: { title, company, location, ai_evidence: prefilter.evidence.map((e) => e.quote),
+             language_mentions: prefilter.languageEvidence.map((e) => e.quote), description: jdText.slice(0, 14_000) },
+      candidate: { location: "Indonesia (GMT+7)", citizenship: "Indonesian", works_in: "English only" },
+    };
+    try {
+      if (!this.jev.ask) throw new Error("Jev ask unavailable");
+      const answers = await this.jev.ask(state, JUDGE_QUESTIONS);
+      const out = {} as Record<DecisionKey, { verdict: { value: unknown; probability?: number }; confidence: number }>;
+      for (const key of DECISIONS) out[key] = toVerdict(JEV_QUESTIONS[key], answers[key]) as never;
+      for (const key of DECISIONS) {
+        await this.recordDecision(key, id, { title, evidence: prefilter.evidence }, out[key].verdict as never, out[key].confidence);
+      }
+      const p = (k: DecisionKey) => Number(out[k].verdict.probability ?? (out[k].verdict.value ? 1 : 0));
+      return {
+        roleRelevance: p("role_relevance"),
+        languageFit: p("language_fit"),
+        remoteScope: String(out.remote_scope.verdict.value) as Verdicts["remoteScope"],
+        sponsorship: String(out.sponsorship.verdict.value) as Verdicts["sponsorship"],
+        seniority: String(out.seniority.verdict.value) as Verdicts["seniority"],
+        verifiedByJev: true,
+      };
+    } catch {
+      return {
+        roleRelevance: local.roleRelevance.value === "relevant" ? 0.8 : 0,
+        languageFit: local.languageFit.value === "pass" ? 0.8 : 0,
+        remoteScope: local.remoteScope.value,
+        sponsorship: local.sponsorship.value,
+        seniority: local.seniority.value,
+        verifiedByJev: false,
+      };
+    }
+  }
+
+  private async saveContacts(jobId: string, title: string, jdText: string): Promise<void> {
+    const found = publicEmails(jdText);
+    if (found.length === 0) return;
+    const contacts: Array<{ email: string; quote: string; verdict: unknown }> = [];
+    for (const item of found) {
+      let verdict: unknown;
+      try {
+        if (this.jev.ask) {
+          const answers = await this.jev.ask(
+            { job_title: title, email: item.email, source_quote: item.quote },
+            { contact_valid: JEV_QUESTIONS.contact_valid },
+          );
+          verdict = toVerdict(JEV_QUESTIONS.contact_valid, answers.contact_valid).verdict;
+          if ((verdict as { value?: unknown }).value === false) continue;
+        }
+      } catch {
+        verdict = undefined; // kept, shown as not yet verified by Jev
+      }
+      contacts.push({ ...item, verdict });
+    }
+    await this.repository.insertPublicContacts(jobId, contacts);
   }
 
   async patchJob(id: string, patch: {
@@ -203,13 +286,15 @@ export class BrainService {
     }
     await this.repository.updateJudgment({
       id,
-      status: patch.status ?? (jobString(row, "status", "new") as JobStatus),
+      status: patch.status ?? (str(row, "status", "new") as JobStatus),
       aiEvidence: patch.aiEvidence ?? evidenceArray(row, "ai_evidence"),
       languageEvidence: evidenceArray(row, "language_evidence"),
       score: patch.score ?? Number(row.score ?? 0),
       scoreBreakdown: (row.score_breakdown ?? {}) as never,
       skipReason: patch.skipReason ?? (typeof row.skip_reason === "string" ? row.skip_reason : null),
+      jevVerified: row.jev_verified === true,
     });
+    if (patch.status === "blacklisted") await this.repository.blacklistCompanyOf(id);
     return this.getJob(id);
   }
 
@@ -217,15 +302,8 @@ export class BrainService {
     return this.repository.databaseCounts();
   }
 
-  private skillOverlap(profile: Record<string, unknown>, jdText: string): number {
-    const skills = Array.isArray(profile.skills) ? profile.skills.map((skill) => String(skill).toLowerCase()) : [];
-    if (skills.length === 0) return 0.5;
-    const jd = jdText.toLowerCase();
-    return skills.filter((skill) => skill.length > 1 && jd.includes(skill)).length / skills.length;
-  }
-
   private async recordDecision(
-    decisionId: (typeof DECISIONS)[number],
+    decisionId: DecisionKey,
     subjectId: string,
     input: DecisionInput,
     verdict: Record<string, unknown> & { value: unknown },
@@ -242,4 +320,27 @@ export class BrainService {
       confidence,
     });
   }
+}
+
+const EMAIL = /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g;
+const NOT_FOR_APPLYING = /(privacy|gdpr|dpo|data\.?protection|legal|abuse|no-?reply|donotreply|example\.|accommodat|accessibility|security@|press@|media@|investor|billing|invoice|support@|help@)/i;
+
+/** Emails written in the JD, each with the sentence it appears in as proof. */
+export function publicEmails(jdText: string): Array<{ email: string; quote: string }> {
+  const out = new Map<string, string>();
+  for (const sentence of jdText.split(/(?<=[.!?])\s+|\n+/)) {
+    for (const match of sentence.matchAll(EMAIL)) {
+      const email = match[0].replace(/[.]+$/, "");
+      if (NOT_FOR_APPLYING.test(email) || out.has(email.toLowerCase())) continue;
+      out.set(email.toLowerCase(), sentence.trim().slice(0, 400));
+    }
+  }
+  return [...out].map(([email, quote]) => ({ email, quote }));
+}
+
+function emptyBreakdown() {
+  return {
+    roleFit: 0, seniorityWeight: 0, modeVisaWeight: 0, freshnessWeight: 0,
+    skillOverlap: 0, countryWeight: 0, rawProduct: 0, score: 0,
+  };
 }

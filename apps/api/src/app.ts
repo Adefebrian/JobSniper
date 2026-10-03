@@ -54,6 +54,7 @@ export type ApiDependencies = {
 };
 
 export type ApiRuntime = {
+  brain: BrainService;
   scheduler: SchedulerService;
   outreach: OutreachService;
 };
@@ -73,7 +74,7 @@ export function createApiApp(dependencies: ApiDependencies): Hono & ApiRuntime {
   const brainService = new BrainService(
     brainRepository,
     dependencies.luna,
-    dependencies.jev,
+    recordingJev,
     dependencies.clock,
     dependencies.ids,
     () => readSettings(database),
@@ -152,6 +153,7 @@ export function createApiApp(dependencies: ApiDependencies): Hono & ApiRuntime {
   );
 
   const app = new Hono() as Hono & ApiRuntime;
+  app.brain = brainService;
   app.scheduler = schedulerService;
   app.outreach = outreachService;
 

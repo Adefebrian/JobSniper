@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import type { JevDecision, JevPort } from "../ports/ai";
+import type { JevAnswer, JevDecision, JevPort, JevQuestion } from "../ports/ai";
 import type { DecisionRecorder } from "../ports/decisions";
 import type { Queryable } from "../ports/database";
 import type { IdGenerator } from "../ports/runtime";
@@ -38,6 +38,11 @@ export class RecordingJev implements JevPort {
     private readonly delegate: JevPort,
     private readonly recorder: DecisionRecorder,
   ) {}
+
+  async ask(state: unknown, questions: Record<string, JevQuestion>): Promise<Record<string, JevAnswer>> {
+    if (!this.delegate.ask) throw new Error("Jev delegate cannot ask");
+    return this.delegate.ask(state, questions);
+  }
 
   async decide(input: Parameters<JevPort["decide"]>[0]): Promise<JevDecision> {
     const decision = await this.delegate.decide(input);

@@ -102,11 +102,10 @@ export class RuntimeMaintenance {
   }
 
   async tick(now = Date.now()): Promise<void> {
-    const previous = this.lastTickAt;
+    // Due-ness lives in career_sources.next_due_at, so scheduling every tick is cheap and a
+    // Mac waking from sleep simply finds everything overdue and catches up.
     this.lastTickAt = now;
-    if (now - previous >= (this.options.wakeGapMs ?? 120_000)) {
-      await this.safe(this.tasks.catchUp);
-    }
+    await this.safe(this.tasks.catchUp);
     if (now >= this.nextReplyAt) {
       this.nextReplyAt = now + (this.options.replyIntervalMs ?? 3_600_000);
       await this.safe(this.tasks.trackReplies);

@@ -57,8 +57,13 @@ pub fn parse_json_api(body: &str, config: &Value) -> Result<AdapterPage> {
 
     let mut jobs = Vec::new();
     for item in items {
-        let title = mapped_required(item, &config.fields, "title", "title")?;
-        let url = mapped_required(item, &config.fields, "url", "url")?;
+        // Feeds mix in notices (RemoteOK's first element is a legal notice): skip, never fail the page.
+        let (Ok(title), Ok(url)) = (
+            mapped_required(item, &config.fields, "title", "title"),
+            mapped_required(item, &config.fields, "url", "url"),
+        ) else {
+            continue;
+        };
         jobs.push(JobRecord {
             title,
             url,

@@ -59,7 +59,21 @@ export type JevDecision = {
   confidence: number;
 };
 
+export type JevQuestion =
+  | { type: "noul"; instructions: string }
+  | { type: "choice"; instructions: string; criteria: Record<string, string> };
+
+export type JevAnswer = {
+  type?: string;
+  noul?: number;
+  choice?: string;
+  confidence?: number;
+  probabilities?: Record<string, number>;
+};
+
 export interface JevPort {
+  /** Several questions about one state in one call (used by the brain). */
+  ask?(state: unknown, questions: Record<string, JevQuestion>): Promise<Record<string, JevAnswer>>;
   decide(input: {
     decisionId:
       | "source_resolve"

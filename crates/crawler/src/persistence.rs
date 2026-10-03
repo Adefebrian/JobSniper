@@ -16,6 +16,24 @@ impl PostgresArtifactSink {
         Self { pool }
     }
 
+    /// Finds or creates the employer named on a feed item (matched case-insensitively).
+    async fn company_for(&self, name: &str) -> Result<String> {
+        let row = sqlx::query(
+            r#"
+            INSERT INTO companies (id, name, domain, country, tier, discovered_via)
+            VALUES ($1::uuid, $2, NULL, 'unknown', 3, 'feed')
+            ON CONFLICT ((lower(name))) DO UPDATE SET updated_at = now()
+            RETURNING id::text AS id
+            "#,
+        )
+        .bind(Uuid::new_v4().to_string())
+        .bind(name)
+        .fetch_one(&self.pool)
+        .await
+        .map_err(database_error)?;
+        row.try_get("id").map_err(database_error)
+    }
+
     async fn update_source_success(
         &self,
         career_source_id: Option<&str>,
@@ -45,6 +63,11 @@ impl PostgresArtifactSink {
                 .execute(&self.pool)
                 .await
                 .map_err(database_error)?;
+                sqlx::query("UPDATE companies SET health = 'ok', updated_at = now() WHERE id = (SELECT company_id FROM career_sources WHERE id = $1::uuid) AND health <> 'ok'")
+                    .bind(career_source_id)
+                    .execute(&self.pool)
+                    .await
+                    .map_err(database_error)?;
             }
             (None, Some(source_id)) => {
                 sqlx::query(
@@ -157,8 +180,8 @@ impl PostgresArtifactSink {
 #[async_trait]
 impl ArtifactSink for PostgresArtifactSink {
     async fn store(&self, artifact: &CrawlArtifact) -> Result<()> {
-        let company_id = if artifact.jobs.is_empty() {
-            None
+        let company_id = if artifact.jobs.is_empty() || artifact.multi_company {
+            artifact.company_id.as_deref().map(|value| parse_id(Some(value), "company_id")).transpose()?
         } else {
             Some(parse_id(artifact.company_id.as_deref(), "company_id")?)
         };
@@ -167,8 +190,17 @@ impl ArtifactSink for PostgresArtifactSink {
             .as_deref()
             .map(|value| parse_id(Some(value), "source_id"))
             .transpose()?;
+        let run_started: chrono::DateTime<chrono::Utc> = sqlx::query_scalar("SELECT now()")
+            .fetch_one(&self.pool)
+            .await
+            .map_err(database_error)?;
         for job in &artifact.jobs {
             let external_id = source_identifier(job);
+            let company_id = match (artifact.multi_company, job.company.as_deref().map(str::trim)) {
+                (true, Some(name)) if !name.is_empty() => Some(self.company_for(name).await?),
+                (true, _) => continue, // a feed item without an employer cannot become a target
+                (false, _) => company_id.clone(),
+            };
             let job_id = Uuid::new_v4().to_string();
             let apply_url = job.apply_url.as_deref().unwrap_or(&job.url);
             let row = sqlx::query(
@@ -218,6 +250,11 @@ impl ArtifactSink for PostgresArtifactSink {
                     location = EXCLUDED.location,
                     posted_at = COALESCE(EXCLUDED.posted_at, jobs.posted_at),
                     last_seen_at = now(),
+                    closed_at = NULL,
+                    status = CASE
+                        WHEN jobs.status = 'closed' THEN 'new'
+                        WHEN jobs.jd_hash <> EXCLUDED.jd_hash AND jobs.status IN ('skipped','unverified','pending_judge','targeted') THEN 'new'
+                        ELSE jobs.status END,
                     jd_text = EXCLUDED.jd_text,
                     jd_hash = EXCLUDED.jd_hash,
                     updated_at = now()
@@ -252,6 +289,25 @@ impl ArtifactSink for PostgresArtifactSink {
                 .bind(&stored_job_id)
                 .bind(source_id)
                 .bind(&job.url)
+                .execute(&self.pool)
+                .await
+                .map_err(database_error)?;
+            }
+        }
+
+        if artifact.close_missing && !artifact.jobs.is_empty() {
+            if let (Some(company_id), Some(source_id)) = (company_id.as_deref(), source_id.as_deref()) {
+                sqlx::query(
+                    r#"
+                    UPDATE jobs SET closed_at = now(), status = CASE WHEN status IN ('sent','replied') THEN status ELSE 'closed' END,
+                                    updated_at = now()
+                    WHERE company_id = $1::uuid AND source_id = $2::uuid
+                      AND closed_at IS NULL AND last_seen_at < $3
+                    "#,
+                )
+                .bind(company_id)
+                .bind(source_id)
+                .bind(run_started)
                 .execute(&self.pool)
                 .await
                 .map_err(database_error)?;

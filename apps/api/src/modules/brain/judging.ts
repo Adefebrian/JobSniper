@@ -37,8 +37,14 @@ export function judgeJob(job: JudgeableJob, aiEvidence: Evidence[], languageEvid
   const text = `${job.title}\n${job.jdText}`;
   const lower = text.toLowerCase();
 
-  const roleRelevant = aiEvidence.length > 0;
-  const languagePass = languageEvidence.length > 0 && !/(german c1 required|arabic native|korean business level|japanese native)/i.test(text);
+  // Fallback only. Company boilerplate ("About us: we build AI") is not role evidence, so a
+  // job without AI in the title needs at least two AI sentences in its description.
+  const titleEvidence = aiEvidence.some((item) => item.source === "title");
+  const roleRelevant = titleEvidence || aiEvidence.filter((item) => item.source === "JD").length >= 2;
+  // Fallback rule only (Jev decides normally): fail when another language is required, not merely a plus.
+  const required = /\b(german|deutsch|french|arabic|korean|japanese|mandarin|chinese|dutch|spanish|italian)\b[^.\n]{0,50}\b(required|native|fluent|mandatory|c1|c2|business[- ]level|verhandlungssicher)\b/i.exec(text);
+  const languagePass = !required || /\b(plus|preferred|nice to have|bonus|advantage)\b/i.test(required[0]);
+  void languageEvidence;
 
   let remoteScope: Judgment["remoteScope"]["value"] = "unknown";
   let remoteEvidence: Evidence[] = [];
@@ -70,7 +76,14 @@ export function judgeJob(job: JudgeableJob, aiEvidence: Evidence[], languageEvid
 
   let seniority: Judgment["seniority"]["value"] = "unknown";
   let seniorityEvidence: Evidence[] = [];
-  if (/\b(mid|mid-level|intermediate)\b|\b3\+ years\b|\b4\+ years\b|\b5\+ years\b/i.test(text)) {
+  const titleLevel = /\b(staff|principal|distinguished|lead|head|director|manager|vp)\b/i.test(job.title) ? "lead"
+    : /\b(senior|sr\.?)\b/i.test(job.title) ? "senior"
+    : /\b(junior|jr\.?|associate|entry)\b/i.test(job.title) ? "early"
+    : null;
+  if (titleLevel) {
+    seniority = titleLevel;
+    seniorityEvidence = [{ quote: job.title, source: "title", reason: "Level in the job title" }];
+  } else if (/\b(mid|mid-level|intermediate)\b|\b3\+ years\b|\b4\+ years\b|\b5\+ years\b/i.test(text)) {
     seniority = "mid";
     seniorityEvidence = quoteContaining(text, /\b(mid|mid-level|intermediate)\b|\b[3-5]\+ years\b/i, "Mid-level");
   } else if (/\b(junior|early career|1\+ years|2\+ years)\b/i.test(text)) {

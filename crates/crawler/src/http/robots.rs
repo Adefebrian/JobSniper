@@ -164,12 +164,9 @@ impl RobotsCache {
                 let response = client.fetch_for_robots(&robots_url).await?;
                 let policy = match response.status {
                     200..=299 => RobotsPolicy::parse(&response.text()),
-                    401 | 403 => {
-                        return Err(CrawlerError::Blocked {
-                            url: url.to_string(),
-                            reason: "robots.txt is protected".to_owned(),
-                        })
-                    }
+                    // RFC 9309 2.3.1.3: any 4xx (401/403 included) means robots.txt is
+                    // unavailable and the crawler may access the site. API hosts such as
+                    // api.ashbyhq.com answer 401 because they have no robots.txt at all.
                     400..=499 => RobotsPolicy::default(),
                     status => {
                         return Err(CrawlerError::Http {

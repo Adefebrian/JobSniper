@@ -20,16 +20,25 @@ export class SchedulerRepository {
         tier: number;
         crawl_due: boolean;
         closed_due: boolean;
+        method: string | null;
+        config: Record<string, unknown>;
       }>(
-        `SELECT id, source_id, company_id, url, tier,
-                next_due_at <= $1 AS crawl_due,
-                closed_check_due_at <= $1 AS closed_due
-         FROM career_sources
-         WHERE (next_due_at <= $1 OR closed_check_due_at <= $1)
-           AND (blocked_until IS NULL OR blocked_until <= $1)
-         ORDER BY tier, least(next_due_at, closed_check_due_at)
+        `SELECT cs.id, cs.source_id, cs.company_id, cs.url, cs.tier,
+                cs.next_due_at <= $1 AS crawl_due,
+                -- ATS boards and feeds close jobs from the listing itself (close_missing);
+                -- the per-URL closed check only makes sense for a custom career page.
+                (cs.kind = 'career_page' AND cs.closed_check_due_at <= $1) AS closed_due,
+                s.method,
+                coalesce(s.config, '{}'::jsonb) || cs.config AS config
+         FROM career_sources cs
+         LEFT JOIN sources s ON s.id = cs.source_id
+         JOIN companies c ON c.id = cs.company_id
+         WHERE (cs.next_due_at <= $1 OR (cs.kind = 'career_page' AND cs.closed_check_due_at <= $1))
+           AND (cs.blocked_until IS NULL OR cs.blocked_until <= $1)
+           AND (s.id IS NULL OR s.status IN ('active', 'candidate'))
+         ORDER BY cs.tier, least(cs.next_due_at, cs.closed_check_due_at)
          LIMIT 1000
-         FOR UPDATE SKIP LOCKED`,
+         FOR UPDATE OF cs SKIP LOCKED`,
         [now.toISOString()],
       );
 
@@ -66,6 +75,8 @@ export class SchedulerRepository {
                 source_id: row.source_id,
                 company_id: row.company_id,
                 career_source_id: row.id,
+                method: row.method,
+                config: row.config,
               }),
               `${item.kind}:${row.id}:${item.dueAt.toISOString()}`,
             ],

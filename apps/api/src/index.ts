@@ -31,7 +31,7 @@ const mail = config.mailProvider === "smtp"
 const app = createApiApp({
   database,
   luna: new LunaClient(config.openAiBaseUrl, config.lunaModel, credentials),
-  jev: new JevClient(config.jevUrl, config.jevModel),
+  jev: new JevClient(config.jevModel, credentials, config.jevUrl),
   clock: new SystemClock(),
   ids: new CryptoIdGenerator(),
   mail,
@@ -40,7 +40,15 @@ const app = createApiApp({
 mountSpa(app, resolve(import.meta.dir, "../../web/dist"));
 
 const maintenance = new RuntimeMaintenance({
-  catchUp: () => app.scheduler.runDueCatchUp(),
+  catchUp: async () => {
+    await app.scheduler.runDueCatchUp();
+    // Judge in batches until the queue is empty or the tick budget is spent.
+    const deadline = Date.now() + 45_000;
+    while (Date.now() < deadline) {
+      const { judged } = await app.brain.processQueue(25);
+      if (judged === 0) break;
+    }
+  },
   trackReplies: () => app.outreach.trackReplies(),
   onError: (error) => console.error("JobSniper maintenance failed:", error),
 });

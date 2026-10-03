@@ -64,12 +64,21 @@ pub fn parse_datetime(value: &str) -> Option<DateTime<Utc>> {
     for format in [
         "%Y-%m-%dT%H:%M:%S%.fZ",
         "%Y-%m-%dT%H:%M:%SZ",
+        "%Y-%m-%dT%H:%M:%S%.f",
+        "%Y-%m-%dT%H:%M:%S",
         "%Y-%m-%d %H:%M:%S",
-        "%Y-%m-%d",
     ] {
         if let Ok(parsed) = chrono::NaiveDateTime::parse_from_str(normalized, format) {
             return Some(parsed.and_utc());
         }
+    }
+    if let Ok(date) = chrono::NaiveDate::parse_from_str(normalized, "%Y-%m-%d") {
+        return date.and_hms_opt(0, 0, 0).map(|value| value.and_utc());
+    }
+    // Feeds such as Himalayas and Arbeitnow publish epoch seconds (or milliseconds).
+    if let Ok(epoch) = normalized.parse::<i64>() {
+        let seconds = if epoch > 100_000_000_000 { epoch / 1000 } else { epoch };
+        return DateTime::from_timestamp(seconds, 0);
     }
     None
 }

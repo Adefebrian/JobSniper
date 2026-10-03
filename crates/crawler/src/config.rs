@@ -23,7 +23,7 @@ impl CrawlerConfig {
             "JobSniper/1.0 (personal public-job crawler; respects robots.txt)".to_owned()
         });
         let request_timeout = Duration::from_secs(parse_number("HTTP_TIMEOUT_SECS", 20)?);
-        let max_body_bytes = parse_number("HTTP_MAX_BODY_BYTES", 5 * 1024 * 1024)?;
+        let max_body_bytes = parse_number("HTTP_MAX_BODY_BYTES", 32 * 1024 * 1024)?;
         let max_redirects = parse_number("HTTP_MAX_REDIRECTS", 5)?;
         let requests_per_second_per_domain = parse_float("REQUESTS_PER_SECOND_PER_DOMAIN", 1.0)?;
         if requests_per_second_per_domain <= 0.0 {

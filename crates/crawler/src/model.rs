@@ -92,6 +92,12 @@ pub struct CrawlArtifact {
     pub emails: Vec<String>,
     pub links: Vec<DiscoveredLink>,
     pub ats_indicators: Vec<String>,
+    /// Aggregator feeds list many employers: each job is filed under its own company.
+    #[serde(default)]
+    pub multi_company: bool,
+    /// A full company board listing: jobs missing from it are closed.
+    #[serde(default)]
+    pub close_missing: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

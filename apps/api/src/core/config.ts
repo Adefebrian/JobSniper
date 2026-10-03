@@ -24,7 +24,7 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     port: numberEnv("JOBSNIPER_PORT", 4870),
     openAiBaseUrl: env.OPENAI_BASE_URL ?? "https://api.openai.com/v1",
     lunaModel: env.JAV_LUNA_MODEL ?? env.LUNA_MODEL ?? "gpt-6-luna",
-    jevUrl: env.JAV_JEV_URL ?? env.JEV_URL ?? "http://127.0.0.1:4871",
+    jevUrl: env.JAV_JEV_URL ?? env.JEV_URL ?? "https://api.typesafe.ai/v1/systemone",
     jevModel: env.JAV_JEV_MODEL ?? env.JEV_MODEL ?? "jev-latest",
     mailProvider: provider === "smtp" || provider === "disabled" ? provider : "gmail",
     llmMonthlyCapUsd: numberEnv("LLM_MONTHLY_CAP_USD", 30),
