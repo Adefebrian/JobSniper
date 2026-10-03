@@ -13,7 +13,21 @@ JobSniper crawls public career pages and ATS feeds, preserves exact relevance ev
 - `ops/launchd`: macOS user agents and installers.
 - `docs`: product contract, design direction, operations and golden evaluation inputs.
 
-## Commands
+## Use it (macOS app)
+
+1. Postgres must run: `brew services start postgresql@15` (already set to start at login on Brian's Mac).
+2. Build and install: `zsh apps/desktop/build.sh --install`, then open JobSniper from /Applications.
+   The app starts the API and the crawler itself, starts at login, and keeps crawling when its window is closed
+   (menu bar icon: Open / Quit). Logs: `~/Library/Logs/JobSniper/`.
+3. Settings > Connections: paste the OpenAI key (gpt-6-luna) and the Jev key. Without Jev, targets are shown
+   with an "Unverified by Jev" label and can never be sent.
+4. Gmail: create a Google Cloud OAuth client of type "Desktop app" with the Gmail API enabled, paste its client ID
+   and secret in Connections, then press Connect Gmail.
+5. Settings > Profile: import the CV file (default `~/Documents/CV_Ade_Febrian_AI_Engineer.docx`).
+6. More company boards: `bun scripts/seed-ats.ts slug1 slug2` probes Greenhouse, Ashby and Lever and registers what answers.
+
+## Develop
+
 
 ```bash
 bun install
