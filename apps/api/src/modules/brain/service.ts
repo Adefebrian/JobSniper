@@ -60,6 +60,8 @@ export type JobFilters = {
 };
 
 export class BrainService {
+  private nextExpiry = 0;
+
   constructor(
     private readonly repository: BrainRepository,
     private readonly luna: LunaPort,
@@ -88,6 +90,10 @@ export class BrainService {
 
   /** Brain loop: judges every job that is new, retry-due, or still waiting for Jev. */
   async processQueue(limit = 25): Promise<{ judged: number }> {
+    if (Date.now() >= this.nextExpiry) {
+      this.nextExpiry = Date.now() + 3_600_000;
+      await this.repository.expireStale();
+    }
     const ids = await this.repository.judgeQueue(limit);
     for (const id of ids) {
       try {

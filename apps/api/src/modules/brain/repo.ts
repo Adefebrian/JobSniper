@@ -20,6 +20,16 @@ export class BrainRepository {
     return result.rows[0];
   }
 
+  /** A job no source has listed for 14 days is treated as closed (feeds never announce closures). */
+  async expireStale(): Promise<number> {
+    const result = await this.database.query(
+      `UPDATE jobs SET closed_at = now(), status = 'closed', updated_at = now()
+       WHERE closed_at IS NULL AND last_seen_at < now() - interval '14 days'
+         AND status NOT IN ('sent', 'replied')`,
+    );
+    return result.rowCount;
+  }
+
   /** Jobs to judge now: new, retry-due, or targeted but still waiting for Jev. */
   async judgeQueue(limit: number): Promise<string[]> {
     const result = await this.database.query<{ id: string }>(
