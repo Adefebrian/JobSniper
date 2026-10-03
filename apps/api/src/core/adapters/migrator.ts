@@ -8,7 +8,8 @@ export async function migrateDatabase(database: DatabasePort): Promise<string[]>
     applied_at timestamptz NOT NULL DEFAULT now()
   )`);
 
-  const directory = resolve(import.meta.dir, "../../../../../db/migrations");
+  // Inside the packaged app the migrations ship as a resource (import.meta.dir is virtual there).
+  const directory = process.env.JOBSNIPER_MIGRATIONS_DIR ?? resolve(import.meta.dir, "../../../../../db/migrations");
   const names = (await readdir(directory)).filter((name) => name.endsWith(".sql")).sort();
   const applied: string[] = [];
 

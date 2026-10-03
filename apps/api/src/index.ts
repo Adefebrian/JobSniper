@@ -41,7 +41,7 @@ const app = createApiApp({
   mount: (routes) => mountConnections(routes, credentials, gmailAuth, database),
 });
 
-mountSpa(app, resolve(import.meta.dir, "../../web/dist"));
+mountSpa(app, process.env.JOBSNIPER_WEB_DIST ?? resolve(import.meta.dir, "../../web/dist"));
 
 const maintenance = new RuntimeMaintenance({
   catchUp: async () => {
