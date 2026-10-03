@@ -1,6 +1,6 @@
 # JobSniper
 
-Local-first AI software engineering job discovery and outreach for Brian.
+Local-first AI software engineering job discovery and outreach.
 
 JobSniper crawls public career pages and ATS feeds, preserves exact relevance evidence, ranks roles against Brian's profile, prepares grounded English applications, and sends only after per-email approval.
 
