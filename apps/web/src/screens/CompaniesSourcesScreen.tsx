@@ -38,7 +38,7 @@ export function CompaniesSourcesScreen({ companies, sources, loading, error, onC
   return (
     <div className="screen">
       <PageHeader eyebrow="Coverage registry" title="Companies & Sources" description="Keep discovery broad, keep provenance visible, and pause sources that stop earning their place." />
-      {error ? <Notice tone="warning">API unavailable. Showing the last locally available registry snapshot.</Notice> : null}
+      {error ? <Notice tone="warning">The local API is not responding. Start JobSniper and refresh.</Notice> : null}
       {notice ? <Notice tone="success">{notice}</Notice> : null}
       <div className="tab-list" role="tablist" aria-label="Registry view">
         <button role="tab" aria-selected={tab === "companies"} className={tab === "companies" ? "active" : ""} onClick={() => setTab("companies")}>Companies <span>{companies.length}</span></button>

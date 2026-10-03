@@ -45,7 +45,7 @@ export function OutreachScreen({ outreach, loading, error, onAction, onExport }:
           <button className="button button-secondary" onClick={() => onExport("xlsx")}>Export XLSX</button>
         </>}
       />
-      {error ? <Notice tone="warning">API unavailable. Showing the last locally available outreach snapshot.</Notice> : null}
+      {error ? <Notice tone="warning">The local API is not responding. Start JobSniper and refresh.</Notice> : null}
       {notice ? <Notice tone="success">{notice}</Notice> : null}
       <div className="cap-row">
         <div><span className="status-label">Daily send cap</span><strong>{sentToday} / 20 sent today</strong></div>

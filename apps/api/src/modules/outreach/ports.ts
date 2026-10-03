@@ -14,6 +14,11 @@ export type OutreachJobContext = {
   jdText: string;
   status: string;
   countries: string[];
+  company?: string;
+  location?: string | null;
+  remoteScope?: string;
+  sponsorship?: string;
+  jevVerified?: boolean;
 };
 
 export type OutreachContact = {

@@ -37,7 +37,7 @@ export function TargetsScreen({ targets, loading, error, onAction, onExport }: P
           <button className="button button-secondary" onClick={() => onExport("xlsx")}>Export XLSX</button>
         </>}
       />
-      {error ? <Notice tone="warning">API unavailable. Showing the last locally available snapshot so review can continue.</Notice> : null}
+      {error ? <Notice tone="warning">The local API is not responding. Start JobSniper and refresh.</Notice> : null}
       <section className="filter-bar" aria-label="Target filters">
         <div className="field field-search">
           <label htmlFor="target-search">Search</label>

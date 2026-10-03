@@ -6,11 +6,17 @@ import { CompaniesSourcesScreen } from "./screens/CompaniesSourcesScreen.tsx";
 import { OutreachScreen } from "./screens/OutreachScreen.tsx";
 import { SettingsScreen } from "./screens/SettingsScreen.tsx";
 import { TargetsScreen } from "./screens/TargetsScreen.tsx";
-import { sampleData } from "./sample-data.ts";
 import { downloadBlob } from "./utils.ts";
 import type { DashboardData, JobAction, JobTarget, Outreach, OutboxAction, Profile, Source } from "./types.ts";
 
 type AppRoute = "targets" | "outreach" | "companies" | "settings";
+
+const EMPTY: DashboardData = {
+  targets: [], outreach: [], companies: [], sources: [],
+  settings: { name: "", email: "", location: "", summary: "", skills: [], availability: "", cvVariants: [], countries: [],
+    scoreWeights: { roleFit: 1, seniority: 1, modeVisa: 1, freshness: 1, skillOverlapCv: 1 }, sender: "", dailyCap: 20, llmBudgetUsd: 30 },
+  status: { lastRunT1: "", lastRunT2: "", lastRunT3: "", queueDepth: 0, llmSpendUsd: 0, blockedSources: 0 },
+};
 
 const getRoute = (): AppRoute => {
   const queryRoute = new URLSearchParams(window.location.search).get("route") ?? "";
@@ -20,7 +26,7 @@ const getRoute = (): AppRoute => {
 
 export function App() {
   const [route, setRoute] = useState(getRoute);
-  const [data, setData] = useState<DashboardData>(sampleData);
+  const [data, setData] = useState<DashboardData>(EMPTY);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [usingSnapshot, setUsingSnapshot] = useState(false);

@@ -11,7 +11,9 @@ import {
   RuntimeMaintenance,
   SystemClock,
 } from "./core/adapters/runtime";
-import { GmailTransport, SmtpTransport } from "./core/adapters/mail";
+import { SmtpTransport } from "./core/adapters/mail";
+import { GmailAuth, GmailTransport } from "./core/adapters/gmail";
+import { mountConnections } from "./core/connections";
 import { mountSpa } from "./core/adapters/spa";
 import { createApiApp } from "./app";
 
@@ -19,6 +21,7 @@ const config = loadConfig();
 const database = new PostgresDatabase(config.databaseUrl);
 const migrations = await migrateDatabase(database);
 const credentials = new MacKeychainCredentialStore();
+const gmailAuth = new GmailAuth(credentials, `http://127.0.0.1:${config.port}/api/gmail/callback`);
 const mail = config.mailProvider === "smtp"
   ? new SmtpTransport(
       process.env.SMTP_HOST ?? "",
@@ -27,7 +30,7 @@ const mail = config.mailProvider === "smtp"
       process.env.SMTP_USER ?? "",
       process.env.SMTP_SECURE !== "false",
     )
-  : new GmailTransport(credentials);
+  : new GmailTransport(gmailAuth);
 const app = createApiApp({
   database,
   luna: new LunaClient(config.openAiBaseUrl, config.lunaModel, credentials),
@@ -35,6 +38,7 @@ const app = createApiApp({
   clock: new SystemClock(),
   ids: new CryptoIdGenerator(),
   mail,
+  mount: (routes) => mountConnections(routes, credentials, gmailAuth, database),
 });
 
 mountSpa(app, resolve(import.meta.dir, "../../web/dist"));

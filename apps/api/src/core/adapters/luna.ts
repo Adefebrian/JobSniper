@@ -34,7 +34,11 @@ export class LunaClient implements LunaPort {
   async parseProfile(input: { sourceText: string }): Promise<{ result: ParsedProfile; usage: LlmUsage }> {
     return this.complete<ParsedProfile>(
       "profile_parse",
-      "Extract a complete editable candidate profile from the CV. Return JSON with profile and sourceText. Preserve factual claims and numeric achievements.",
+      `Extract the candidate profile from the CV text. Use only facts written in the CV. Reply with JSON exactly:
+{"profile":{"name":string,"email":string,"location":string,"timezone":"Asia/Jakarta","skills":string[] (up to 30 concrete technical skills, most important first, spelled as in the CV),
+"achievements":string[] (up to 10 quantified achievements copied from the CV, each one sentence with its number),
+"titles":string[],"yearsExperience":number,"availability":string,"noticePeriod":string,"links":{"github":string,"linkedin":string,"portfolio":string}},
+"sourceText":string (the CV text you used)}. Use "" when a field is not in the CV.`,
       input,
     );
   }
@@ -46,7 +50,12 @@ export class LunaClient implements LunaPort {
   }): Promise<{ result: JobExtraction; usage: LlmUsage }> {
     return this.complete<JobExtraction>(
       "job_extract",
-      `Extract structured job data. Translate the JD to English when needed. Return evidence as exact quotes copied from the source. Use only the allowed enum values for workMode, remoteScope, sponsorship, and seniority.`,
+      `Translate and structure a job posting. Reply with JSON exactly:
+{"title":string,"location":string|null,"countries":string[],"workMode":"remote"|"hybrid"|"onsite"|"unknown",
+"remoteScope":"remote_global"|"remote_apac"|"remote_restricted"|"onsite"|"unknown","sponsorship":"yes"|"no"|"unknown",
+"seniority":"mid"|"early"|"senior"|"lead"|"unknown","salary":string|null,"requirements":string[],
+"jdTextEnglish":string (the full description translated to English, nothing left out, language requirements kept),
+"translated":boolean,"evidence":[{"quote":string (copied character for character from the ORIGINAL text),"source":"JD","reason":string}]}`,
       input,
     );
   }
@@ -58,7 +67,15 @@ export class LunaClient implements LunaPort {
   }): Promise<{ result: GroundedDraft; usage: LlmUsage }> {
     return this.complete<GroundedDraft>(
       "email_draft",
-      "Draft a concise English application. Every company claim in whyCompany and the body must be supported by an exact source quote in evidence. Do not invent facts, email addresses, or achievements.",
+      `You write a short cold application email (English, 120 to 190 words, plain text, no markdown, no emoji, no em dash) from the candidate to the hiring team.
+Reply with JSON exactly: {"subject":string,"whyCompany":string,"body":string,"evidence":[{"quote":string,"source":"JD","reason":string}]}.
+Rules, all mandatory:
+1. subject: role title + posting reference if the job has one + one concrete hook from the candidate's achievements; 8 to 120 characters.
+2. whyCompany: ONE sentence about why this company/role, built only on facts in sourceText; it must appear word for word inside body.
+3. evidence: 1 to 3 quotes copied character for character from sourceText that support whyCompany.
+4. body must contain: a greeting; whyCompany; 2 or 3 of the candidate's achievements that best match the job requirements, each with its number; the work-status line given in job.workStatus, verbatim;
+   the availability line "Availability: <profile.availability or 'available to start within 30 days'>"; the exact posting URL job.url on its own line; a call to action asking for a short 15 minute call; a sign-off with profile.name and profile links that are not empty.
+5. Never invent achievements, numbers, company facts, or email addresses. Use only profile and sourceText.`,
       input,
     );
   }

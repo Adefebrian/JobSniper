@@ -64,14 +64,12 @@ export class DatabaseOutreachContext implements OutreachContextProvider {
 
   async job(id: string): Promise<OutreachJobContext | undefined> {
     const row = (await this.database.query<{
-      id: string;
-      title: string;
-      url: string;
-      jd_text: string;
-      status: string;
-      countries: string[];
+      id: string; title: string; url: string; jd_text: string; status: string; countries: string[];
+      company: string; location: string | null; remote_scope: string; sponsorship: string; jev_verified: boolean;
     }>(
-      "SELECT id, title, url, jd_text, status, countries FROM jobs WHERE id = $1",
+      `SELECT j.id, j.title, j.url, coalesce(j.jd_text_english, j.jd_text) AS jd_text, j.status, j.countries,
+              c.name AS company, j.location, j.remote_scope, j.sponsorship, j.jev_verified
+       FROM jobs j JOIN companies c ON c.id = j.company_id WHERE j.id = $1`,
       [id],
     )).rows[0];
     return row ? {
@@ -81,6 +79,11 @@ export class DatabaseOutreachContext implements OutreachContextProvider {
       jdText: row.jd_text,
       status: row.status,
       countries: row.countries,
+      company: row.company,
+      location: row.location,
+      remoteScope: row.remote_scope,
+      sponsorship: row.sponsorship,
+      jevVerified: row.jev_verified,
     } : undefined;
   }
 
@@ -160,7 +163,10 @@ export class DocumentCvAttachmentProvider implements CvAttachmentProvider {
     }
     try {
       const content = await readFile(path);
-      return [{ filename: basename(path), content, mimeType: "application/pdf" }];
+      const mimeType = /\.pdf$/i.test(path) ? "application/pdf"
+        : /\.docx$/i.test(path) ? "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        : "application/octet-stream";
+      return [{ filename: basename(path), content, mimeType }];
     } catch {
       throw new ApiError(422, "cv_attachment_missing", `CV attachment ${basename(path)} was not found.`);
     }

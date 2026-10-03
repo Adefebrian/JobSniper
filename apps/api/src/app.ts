@@ -11,6 +11,7 @@ import {
   SqlUsageRecorder,
 } from "./core/adapters/integrations";
 import { ApiError, errorHandler, fail, localOnly, ok } from "./core/http";
+import { mountWebContract } from "./web-contract";
 import { readSettings } from "./core/settings";
 import {
   BrainRepository,
@@ -51,6 +52,8 @@ export type ApiDependencies = {
   ids: IdGenerator;
   mail?: Pick<MailTransport, "send" | "fetchThreadReplies">;
   cvDirectory?: string;
+  /** Extra routes mounted before the /api 404 catch-all (connections, Gmail OAuth). */
+  mount?: (app: Hono) => void;
 };
 
 export type ApiRuntime = {
@@ -172,6 +175,19 @@ export function createApiApp(dependencies: ApiDependencies): Hono & ApiRuntime {
   app.route("/api", outreachRoutes(outreachService));
   app.route("/api", companiesRoutes(companiesService));
   app.route("/api", settingsRoutes(settingsService));
+  mountWebContract(app, {
+    database,
+    draft: (jobId, contactId) => outreachService.draft({ jobId, ...(contactId ? { contactId } : {}) }),
+    dashboardStatus: () => companiesService.dashboardStatus(),
+    companies: () => companiesService.listCompanies() as Promise<unknown[]>,
+    sources: () => companiesService.listSources({}) as Promise<unknown[]>,
+    outreach: () => outreachService.list({}) as Promise<unknown[]>,
+    settings: () => settingsService.getView(),
+    blacklist: async (jobId) => {
+      await brainService.patchJob(jobId, { status: "blacklisted" });
+    },
+  });
+  dependencies.mount?.(app);
   app.all("/api", () => fail(new ApiError(404, "not_found", "API endpoint was not found.")));
   app.all("/api/*", () => fail(new ApiError(404, "not_found", "API endpoint was not found.")));
   app.notFound(() => fail(new ApiError(404, "not_found", "Endpoint was not found.")));

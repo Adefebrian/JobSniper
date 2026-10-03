@@ -46,7 +46,7 @@ export function emailBodyValid(subject: string, body: string, jobUrl: string): b
     body.includes(jobUrl) &&
     /\d/.test(body) &&
     /(call|chat|meet|conversation|discussion)/i.test(body) &&
-    /(remote from indonesia|relocat|visa sponsorship|work authorization)/i.test(body) &&
+    /(remote(ly)? from indonesia|relocat|visa sponsorship|work authorization)/i.test(body) &&
     /(available|availability|notice period|start date)/i.test(body);
 }
 
@@ -143,19 +143,34 @@ export class OutreachService {
     const contact = input.contactId ? await this.context.contact(input.contactId) : undefined;
     if (input.contactId && !contact) throw new ApiError(404, "contact_not_found", "Contact was not found.");
     const settings = await this.context.settings();
-    const generated = await this.luna.draftEmail({
+    const remote = job.remoteScope === "remote_global" || job.remoteScope === "remote_apac";
+    const draftInput = {
       profile: settings.profile,
       job: {
-        id: job.id,
         title: job.title,
+        company: job.company ?? "",
         url: job.url,
-        status: job.status,
-        countries: job.countries,
+        location: job.location ?? "",
+        kind: input.kind ?? "initial",
+        workStatus: remote
+          ? "I would work remotely from Indonesia (GMT+7) and can overlap with your core hours."
+          : "I am based in Indonesia, open to relocating, and would need visa sponsorship.",
       },
-      sourceText: job.jdText,
-    });
+      sourceText: job.jdText.slice(0, 12_000),
+    };
+    let generated = await this.luna.draftEmail(draftInput);
     await this.context.recordUsage(generated.usage);
-    requireDraft(generated.result, job);
+    try {
+      requireDraft(generated.result, job);
+    } catch (first) {
+      // One retry with the exact rule that failed; a second failure is surfaced to Brian.
+      generated = await this.luna.draftEmail({
+        ...draftInput,
+        sourceText: `${draftInput.sourceText}\n\nPREVIOUS ATTEMPT WAS REJECTED: ${(first as Error).message} Fix it and follow every rule.`,
+      });
+      await this.context.recordUsage(generated.usage);
+      requireDraft(generated.result, { ...job, jdText: job.jdText });
+    }
     const row = await this.repository.create({
       id: this.ids.newId(),
       jobId: job.id,
@@ -249,6 +264,10 @@ export class OutreachService {
   async send(id: string): Promise<{ outreach: Record<string, unknown>; gate: Record<string, unknown> }> {
     const current = await this.repository.get(id);
     if (!current) throw new ApiError(404, "outreach_not_found", "Outreach was not found.");
+    const gateJob = await this.context.job(String(current.job_id));
+    if (gateJob && gateJob.jevVerified === false) {
+      throw new ApiError(409, "jev_unverified", "Jev has not verified this job yet, so it cannot be sent (PRD 11).");
+    }
     const gate = await this.evaluateGate(current);
     if (!gate.pass) {
       throw new ApiError(409, gate.code, gate.reason);

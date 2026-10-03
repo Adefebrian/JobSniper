@@ -2,93 +2,8 @@ import net from "node:net";
 import tls from "node:tls";
 import { ApiError } from "../http";
 import type { MailTransport, OutgoingMail, SentMail } from "../ports/mail";
+import { buildMime } from "./gmail";
 import type { CredentialStore } from "../ports/runtime";
-
-function encodeBase64Url(value: Uint8Array | string): string {
-  const bytes = typeof value === "string" ? new TextEncoder().encode(value) : value;
-  let binary = "";
-  for (const byte of bytes) binary += String.fromCharCode(byte);
-  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-}
-
-function quotedPrintable(value: string): string {
-  return value
-    .replace(/[^\x20-\x7E\n]/g, (character) =>
-      Array.from(new TextEncoder().encode(character))
-        .map((byte) => `=${byte.toString(16).toUpperCase().padStart(2, "0")}`)
-        .join(""),
-    )
-    .replace(/\n/g, "\r\n")
-    .replace(/[ \t]+$/gm, (spaces) =>
-      Array.from(spaces).map(() => "=20").join(""),
-    );
-}
-
-function mailBody(message: OutgoingMail): string {
-  const boundary = `jobsniper-${crypto.randomUUID()}`;
-  const headers = [
-    `From: ${message.fromName} <${message.from}>`,
-    `To: ${message.to}`,
-    `Subject: ${message.subject}`,
-    "MIME-Version: 1.0",
-    `Content-Type: multipart/mixed; boundary="${boundary}"`,
-    ...(message.threadId ? [`X-GM-THRID: ${message.threadId}`] : []),
-  ].join("\r\n");
-  const text = `--${boundary}\r\nContent-Type: text/plain; charset=utf-8\r\nContent-Transfer-Encoding: quoted-printable\r\n\r\n${quotedPrintable(message.body)}`;
-  const attachments = (message.attachments ?? []).map((attachment) =>
-    `--${boundary}\r\nContent-Type: ${attachment.mimeType}; name="${attachment.filename}"\r\nContent-Transfer-Encoding: base64\r\n\r\n${encodeBase64Url(attachment.content).replace(/-/g, "+").replace(/_/g, "/")}`,
-  );
-  return `${headers}\r\n\r\n${text}\r\n${attachments.join("\r\n")}\r\n--${boundary}--\r\n`;
-}
-
-export class GmailTransport implements MailTransport {
-  readonly name = "gmail" as const;
-
-  constructor(
-    private readonly credentials: CredentialStore,
-    private readonly baseUrl = "https://gmail.googleapis.com/gmail/v1/users/me",
-  ) {}
-
-  async send(message: OutgoingMail): Promise<SentMail> {
-    const token = (await this.credentials.get("GMAIL_ACCESS_TOKEN")) ?? process.env.GMAIL_ACCESS_TOKEN;
-    if (!token) throw new ApiError(503, "gmail_credentials_missing", "Gmail access token is not configured.");
-    const response = await fetch(`${this.baseUrl}/messages/send`, {
-      method: "POST",
-      headers: {
-        authorization: `Bearer ${token}`,
-        "content-type": "application/json",
-      },
-      body: JSON.stringify({ raw: encodeBase64Url(mailBody(message)) }),
-    });
-    if (!response.ok) throw new ApiError(502, "gmail_send_failed", `Gmail send failed with ${response.status}.`);
-    const payload = await response.json() as { id?: string; threadId?: string };
-    return {
-      providerMessageId: payload.id ?? crypto.randomUUID(),
-      threadId: payload.threadId ?? message.threadId ?? null,
-    };
-  }
-
-  async fetchThreadReplies(threadId: string) {
-    const token = (await this.credentials.get("GMAIL_ACCESS_TOKEN")) ?? process.env.GMAIL_ACCESS_TOKEN;
-    if (!token) throw new ApiError(503, "gmail_credentials_missing", "Gmail access token is not configured.");
-    const response = await fetch(`${this.baseUrl}/threads/${encodeURIComponent(threadId)}?format=metadata`, {
-      headers: { authorization: `Bearer ${token}` },
-    });
-    if (!response.ok) throw new ApiError(502, "gmail_thread_failed", `Gmail thread fetch failed with ${response.status}.`);
-    const payload = await response.json() as {
-      messages?: Array<{ payload?: { headers?: Array<{ name?: string; value?: string }> } }>;
-    };
-    return (payload.messages ?? []).slice(1).map((message) => {
-      const headers = message.payload?.headers ?? [];
-      const header = (name: string) => headers.find((item) => item.name?.toLowerCase() === name.toLowerCase())?.value ?? "";
-      return {
-        from: header("from"),
-        body: "",
-        receivedAt: header("date"),
-      };
-    });
-  }
-}
 
 type SmtpResponse = { code: number; text: string };
 
@@ -154,7 +69,9 @@ export class SmtpTransport implements MailTransport {
       await smtpExchange(socket, `MAIL FROM:<${message.from}>`, [250]);
       await smtpExchange(socket, `RCPT TO:<${message.to}>`, [250, 251]);
       await smtpExchange(socket, "DATA", [354]);
-      await smtpExchange(socket, `${mailBody(message).replace(/\r\n/g, "\r\n.").replace(/\.$/, "\r\n..")}\r\n.`, [250]);
+      // Dot-stuffing (RFC 5321 4.5.2): only lines that start with "." get an extra dot.
+      const data = buildMime(message).replace(/\r\n\./g, "\r\n..").replace(/^\./, "..");
+      await smtpExchange(socket, `${data}\r\n.`, [250]);
       await smtpExchange(socket, "QUIT", [221]);
       return { providerMessageId: crypto.randomUUID(), threadId: message.threadId ?? null };
     } finally {
